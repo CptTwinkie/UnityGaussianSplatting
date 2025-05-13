@@ -12,54 +12,64 @@ namespace GaussianSplatting.Editor.Utils
 {
     public class FilePickerControl
     {
-        const string kLastPathPref = "nesnausk.utils.FilePickerLastPath";
-        static Texture2D s_FolderIcon => EditorGUIUtility.FindTexture(EditorResources.emptyFolderIconName);
-        static Texture2D s_FileIcon => EditorGUIUtility.FindTexture(EditorResources.folderIconName);
-        static GUIStyle s_StyleTextFieldText;
-        static GUIStyle s_StyleTextFieldDropdown;
-        static readonly int kPathFieldControlID = "FilePickerPathField".GetHashCode();
-        const int kIconSize = 15;
-        const int kRecentPathsCount = 20;
+        private const string kLastPathPref = "nesnausk.utils.FilePickerLastPath";
+        private const int kIconSize = 15;
+        private const int kRecentPathsCount = 20;
+        private static readonly int kPathFieldControlID = "FilePickerPathField".GetHashCode();
+
+        private static GUIStyle _styleTextFieldText;
+        private static GUIStyle _styleTextFieldDropdown;
+        private static Texture2D FolderIcon => EditorGUIUtility.FindTexture(EditorResources.emptyFolderIconName);
+        private static Texture2D FileIcon => EditorGUIUtility.FindTexture(EditorResources.folderIconName);
 
         public static string PathToDisplayString(string path)
         {
             if (string.IsNullOrWhiteSpace(path))
                 return "<none>";
+
             path = path.Replace('\\', '/');
             string[] parts = path.Split('/');
 
             // check if filename is not some super generic one
             var baseName = Path.GetFileNameWithoutExtension(parts[^1]).ToLowerInvariant();
+            
             if (baseName != "point_cloud" && baseName != "splat" && baseName != "input")
+            {
                 return parts[^1];
+            }
 
             // otherwise if filename is just some generic "point cloud" type, then take some folder names above it into account
             if (parts.Length >= 4)
+            {
                 path = string.Join('/', parts.TakeLast(4));
+            }
 
             path = path.Replace('/', '-');
             return path;
         }
 
-        class PreviousPaths
+        private class PreviousPaths
         {
+            public readonly List<string> Paths;
+            public GUIContent[] Content;
+
             public PreviousPaths(List<string> paths)
             {
-                this.paths = paths;
+                Paths = paths;
                 UpdateContent();
             }
+
             public void UpdateContent()
             {
-                this.content = paths.Select(p => new GUIContent(PathToDisplayString(p))).ToArray();
+                Content = Paths.Select(p => new GUIContent(PathToDisplayString(p))).ToArray();
             }
-            public List<string> paths;
-            public GUIContent[] content;
         }
-        Dictionary<string, PreviousPaths> m_PreviousPaths = new();
 
-        void PopulatePreviousPaths(string nameKey)
+        private Dictionary<string, PreviousPaths> _previousPaths = new();
+
+        private void PopulatePreviousPaths(string nameKey)
         {
-            if (m_PreviousPaths.ContainsKey(nameKey))
+            if (_previousPaths.ContainsKey(nameKey))
                 return;
 
             List<string> prevPaths = new();
@@ -69,29 +79,29 @@ namespace GaussianSplatting.Editor.Utils
                 if (!string.IsNullOrWhiteSpace(path))
                     prevPaths.Add(path);
             }
-            m_PreviousPaths.Add(nameKey, new PreviousPaths(prevPaths));
+            _previousPaths.Add(nameKey, new PreviousPaths(prevPaths));
         }
 
-        void UpdatePreviousPaths(string nameKey, string path)
+        private void UpdatePreviousPaths(string nameKey, string path)
         {
-            if (!m_PreviousPaths.ContainsKey(nameKey))
+            if (!_previousPaths.ContainsKey(nameKey))
             {
-                m_PreviousPaths.Add(nameKey, new PreviousPaths(new List<string>()));
+                _previousPaths.Add(nameKey, new PreviousPaths(new List<string>()));
             }
-            var prevPaths = m_PreviousPaths[nameKey];
-            prevPaths.paths.Remove(path);
-            prevPaths.paths.Insert(0, path);
-            while (prevPaths.paths.Count > kRecentPathsCount)
-                prevPaths.paths.RemoveAt(prevPaths.paths.Count - 1);
+            var prevPaths = _previousPaths[nameKey];
+            prevPaths.Paths.Remove(path);
+            prevPaths.Paths.Insert(0, path);
+            while (prevPaths.Paths.Count > kRecentPathsCount)
+                prevPaths.Paths.RemoveAt(prevPaths.Paths.Count - 1);
             prevPaths.UpdateContent();
 
-            for (int i = 0; i < prevPaths.paths.Count; ++i)
+            for (int i = 0; i < prevPaths.Paths.Count; ++i)
             {
-                EditorPrefs.SetString($"{kLastPathPref}-{nameKey}-{i}", prevPaths.paths[i]);
+                EditorPrefs.SetString($"{kLastPathPref}-{nameKey}-{i}", prevPaths.Paths[i]);
             }
         }
 
-        static bool CheckPath(string path, bool isFolder)
+        private static bool CheckPath(string path, bool isFolder)
         {
             if (string.IsNullOrWhiteSpace(path))
                 return false;
@@ -108,7 +118,7 @@ namespace GaussianSplatting.Editor.Utils
             return true;
         }
 
-        static string PathAbsToStorage(string path)
+        private static string PathAbsToStorage(string path)
         {
             path = path.Replace('\\', '/');
             var dataPath = Application.dataPath;
@@ -120,7 +130,7 @@ namespace GaussianSplatting.Editor.Utils
             return path;
         }
 
-        bool CheckAndSetNewPath(ref string path, string nameKey, bool isFolder)
+        private bool CheckAndSetNewPath(ref string path, string nameKey, bool isFolder)
         {
             path = PathAbsToStorage(path);
             if (CheckPath(path, isFolder))
@@ -134,23 +144,23 @@ namespace GaussianSplatting.Editor.Utils
             return false;
         }
 
-        string PreviousPathsDropdown(Rect position, string value, string nameKey, bool isFolder)
+        private string PreviousPathsDropdown(Rect position, string value, string nameKey, bool isFolder)
         {
             PopulatePreviousPaths(nameKey);
 
             if (string.IsNullOrWhiteSpace(value))
                 value = EditorPrefs.GetString($"{kLastPathPref}-{nameKey}");
 
-            m_PreviousPaths.TryGetValue(nameKey, out var prevPaths);
+            _previousPaths.TryGetValue(nameKey, out var prevPaths);
 
-            EditorGUI.BeginDisabledGroup(prevPaths == null || prevPaths.paths.Count == 0);
+            EditorGUI.BeginDisabledGroup(prevPaths == null || prevPaths.Paths.Count == 0);
             EditorGUI.BeginChangeCheck();
             int oldIndent = EditorGUI.indentLevel;
             EditorGUI.indentLevel = 0;
-            int parameterIndex = EditorGUI.Popup(position, GUIContent.none, -1, prevPaths.content, s_StyleTextFieldDropdown);
-            if (EditorGUI.EndChangeCheck() && parameterIndex < prevPaths.paths.Count)
+            int parameterIndex = EditorGUI.Popup(position, GUIContent.none, -1, prevPaths.Content, _styleTextFieldDropdown);
+            if (EditorGUI.EndChangeCheck() && parameterIndex < prevPaths.Paths.Count)
             {
-                string newValue = prevPaths.paths[parameterIndex];
+                string newValue = prevPaths.Paths[parameterIndex];
                 if (CheckAndSetNewPath(ref newValue, nameKey, isFolder))
                     value = newValue;
             }
@@ -162,14 +172,14 @@ namespace GaussianSplatting.Editor.Utils
         // null extension picks folders
         public string PathFieldGUI(Rect position, GUIContent label, string value, string extension, string nameKey)
         {
-            s_StyleTextFieldText ??= new GUIStyle("TextFieldDropDownText");
-            s_StyleTextFieldDropdown ??= new GUIStyle("TextFieldDropdown");
+            _styleTextFieldText ??= new GUIStyle("TextFieldDropDownText");
+            _styleTextFieldDropdown ??= new GUIStyle("TextFieldDropdown");
             bool isFolder = extension == null;
 
             int controlId = GUIUtility.GetControlID(kPathFieldControlID, FocusType.Keyboard, position);
             Rect fullRect = EditorGUI.PrefixLabel(position, controlId, label);
-            Rect textRect = new Rect(fullRect.x, fullRect.y, fullRect.width - s_StyleTextFieldDropdown.fixedWidth, fullRect.height);
-            Rect dropdownRect = new Rect(textRect.xMax, fullRect.y, s_StyleTextFieldDropdown.fixedWidth, fullRect.height);
+            Rect textRect = new Rect(fullRect.x, fullRect.y, fullRect.width - _styleTextFieldDropdown.fixedWidth, fullRect.height);
+            Rect dropdownRect = new Rect(textRect.xMax, fullRect.y, _styleTextFieldDropdown.fixedWidth, fullRect.height);
             Rect iconRect = new Rect(textRect.xMax - kIconSize, textRect.y, kIconSize, textRect.height);
 
             value = PreviousPathsDropdown(dropdownRect, value, nameKey, isFolder);
@@ -192,8 +202,8 @@ namespace GaussianSplatting.Editor.Utils
                     }
                     break;
                 case EventType.Repaint:
-                    s_StyleTextFieldText.Draw(textRect, new GUIContent(displayText), controlId, DragAndDrop.activeControlID == controlId);
-                    GUI.DrawTexture(iconRect, isFolder ? s_FolderIcon : s_FileIcon, ScaleMode.ScaleToFit);
+                    _styleTextFieldText.Draw(textRect, new GUIContent(displayText), controlId, DragAndDrop.activeControlID == controlId);
+                    GUI.DrawTexture(iconRect, isFolder ? FolderIcon : FileIcon, ScaleMode.ScaleToFit);
                     break;
                 case EventType.MouseDown:
                     if (evt.button != 0 || !GUI.enabled)

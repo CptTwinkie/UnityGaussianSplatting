@@ -49,25 +49,32 @@ namespace GaussianSplatting.Runtime
             float4 absQ = math.abs(q);
             int index = 0;
             float maxV = absQ.x;
+
             if (absQ.y > maxV)
             {
                 index = 1;
                 maxV = absQ.y;
             }
+
             if (absQ.z > maxV)
             {
                 index = 2;
                 maxV = absQ.z;
             }
+
             if (absQ.w > maxV)
             {
                 index = 3;
                 maxV = absQ.w;
             }
 
-            if (index == 0) q = q.yzwx;
-            if (index == 1) q = q.xzwy;
-            if (index == 2) q = q.xywz;
+            q = index switch
+            {
+                0 => q.yzwx,
+                1 => q.xzwy,
+                2 => q.xywz,
+                _ => q
+            };
 
             float3 three = q.xyz * (q.w >= 0 ? 1 : -1); // -1/sqrt2..+1/sqrt2 range
             three = (three * math.SQRT2) * 0.5f + 0.5f; // 0..1 range
@@ -78,7 +85,7 @@ namespace GaussianSplatting.Runtime
 
         // Based on https://fgiesen.wordpress.com/2009/12/13/decoding-morton-codes/
         // Insert two 0 bits after each of the 21 low bits of x
-        static ulong MortonPart1By2(ulong x)
+        private static ulong MortonPart1By2(ulong x)
         {
             x &= 0x1fffff;
             x = (x ^ (x << 32)) & 0x1f00000000ffffUL;

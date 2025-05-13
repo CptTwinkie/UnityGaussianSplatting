@@ -1,3 +1,4 @@
+/*
 // SPDX-License-Identifier: MIT
 
 using UnityEditor;
@@ -24,3 +25,4 @@ namespace GaussianSplatting.Editor.Utils
         }
     }
 }
+*/

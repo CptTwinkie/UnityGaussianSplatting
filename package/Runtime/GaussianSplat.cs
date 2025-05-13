@@ -5,29 +5,63 @@ using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Experimental.Rendering;
+using UnityEngine.Serialization;
 
 namespace GaussianSplatting.Runtime
 {
-    public class GaussianSplatAsset : ScriptableObject
+    public class GaussianSplat : UnityEngine.Object
     {
+        #region Data
+
         public const int kCurrentVersion = 2023_10_20;
         public const int kChunkSize = 256;
         public const int kTextureWidth = 2048; // allows up to 32M splats on desktop GPU (2k width x 16k height)
         public const int kMaxSplats = 8_600_000; // mostly due to 2GB GPU buffer size limit when exporting a splat (2GB / 248B is just over 8.6M)
 
-        [SerializeField] int m_FormatVersion;
-        [SerializeField] int m_SplatCount;
-        [SerializeField] Vector3 m_BoundsMin;
-        [SerializeField] Vector3 m_BoundsMax;
-        [SerializeField] Hash128 m_DataHash;
+        [SerializeField] private VectorFormat _posFormat = VectorFormat.Norm11;
+        [SerializeField] private VectorFormat _scaleFormat = VectorFormat.Norm11;
+        [SerializeField] private SHFormat _shFormat = SHFormat.Norm11;
+        [SerializeField] private ColorFormat _colFormat;
 
-        public int formatVersion => m_FormatVersion;
-        public int splatCount => m_SplatCount;
-        public Vector3 boundsMin => m_BoundsMin;
-        public Vector3 boundsMax => m_BoundsMax;
-        public Hash128 dataHash => m_DataHash;
+        [SerializeField] private TextAsset _posData;
+        [SerializeField] private TextAsset _colorData;
+        [SerializeField] private TextAsset _otherData;
+        [SerializeField] private TextAsset _shData;
+        // Chunk data is optional (if data formats are fully lossless then there's no chunking)
+        [SerializeField] private TextAsset _chunkData;
 
-        // Match VECTOR_FMT_* in HLSL
+        [SerializeField] private CameraInfo[] _cameras;
+
+        [SerializeField] private int _formatVersion;
+        [SerializeField] private int _splatCount;
+        [SerializeField] private Vector3 _boundsMin;
+        [SerializeField] private Vector3 _boundsMax;
+        [SerializeField] private Hash128 _dataHash;
+
+        /// <summary> Retained from ScriptableObject for convenience. </summary>
+        public string Name;
+
+        public int FormatVersion => _formatVersion;
+        public int SplatCount => _splatCount;
+        public Vector3 BoundsMin => _boundsMin;
+        public Vector3 BoundsMax => _boundsMax;
+        public Hash128 DataHash => _dataHash;
+        public VectorFormat PosFormat => _posFormat;
+        public VectorFormat ScaleFormat => _scaleFormat;
+        public SHFormat ShFormat => _shFormat;
+        public ColorFormat ColFormat => _colFormat;
+        public TextAsset PosData => _posData;
+        public TextAsset ColorData => _colorData;
+        public TextAsset OtherData => _otherData;
+        public TextAsset SHData => _shData;
+        public TextAsset ChunkData => _chunkData;
+        public CameraInfo[] Cameras => _cameras;
+
+        #endregion Data
+
+        #region Types
+
+        /// <summary> Match VECTOR_FMT_* in HLSL </summary>
         public enum VectorFormat
         {
             Float32, // 12 bytes: 32F.32F.32F
@@ -50,18 +84,18 @@ namespace GaussianSplatting.Runtime
 
         public enum ColorFormat
         {
-            Float32x4,
-            Float16x4,
-            Norm8x4,
+            Float32X4,
+            Float16X4,
+            Norm8X4,
             BC7,
         }
         public static int GetColorSize(ColorFormat fmt)
         {
             return fmt switch
             {
-                ColorFormat.Float32x4 => 16,
-                ColorFormat.Float16x4 => 8,
-                ColorFormat.Norm8x4 => 4,
+                ColorFormat.Float32X4 => 16,
+                ColorFormat.Float16X4 => 8,
+                ColorFormat.Norm8X4 => 4,
                 ColorFormat.BC7 => 1,
                 _ => throw new ArgumentOutOfRangeException(nameof(fmt), fmt, null)
             };
@@ -73,58 +107,78 @@ namespace GaussianSplatting.Runtime
             Float16,
             Norm11,
             Norm6,
-            Cluster64k,
-            Cluster32k,
-            Cluster16k,
-            Cluster8k,
-            Cluster4k,
+            Cluster64K,
+            Cluster32K,
+            Cluster16K,
+            Cluster8K,
+            Cluster4K,
         }
 
         public struct SHTableItemFloat32
         {
-            public float3 sh1, sh2, sh3, sh4, sh5, sh6, sh7, sh8, sh9, shA, shB, shC, shD, shE, shF;
-            public float3 shPadding; // pad to multiple of 16 bytes
+            public float3 SH1, SH2, SH3, SH4, SH5, SH6, SH7, SH8, SH9, SHA, SHB, SHC, SHD, SHE, SHF;
+            public float3 SHPadding; // pad to multiple of 16 bytes
         }
         public struct SHTableItemFloat16
         {
-            public half3 sh1, sh2, sh3, sh4, sh5, sh6, sh7, sh8, sh9, shA, shB, shC, shD, shE, shF;
-            public half3 shPadding; // pad to multiple of 16 bytes
+            public half3 SH1, SH2, SH3, SH4, SH5, SH6, SH7, SH8, SH9, SHA, SHB, SHC, SHD, SHE, SHF;
+            public half3 SHPadding; // pad to multiple of 16 bytes
         }
         public struct SHTableItemNorm11
         {
-            public uint sh1, sh2, sh3, sh4, sh5, sh6, sh7, sh8, sh9, shA, shB, shC, shD, shE, shF;
+            public uint SH1, SH2, SH3, SH4, SH5, SH6, SH7, SH8, SH9, SHA, SHB, SHC, SHD, SHE, SHF;
         }
         public struct SHTableItemNorm6
         {
-            public ushort sh1, sh2, sh3, sh4, sh5, sh6, sh7, sh8, sh9, shA, shB, shC, shD, shE, shF;
-            public ushort shPadding; // pad to multiple of 4 bytes
+            public ushort SH1, SH2, SH3, SH4, SH5, SH6, SH7, SH8, SH9, SHA, SHB, SHC, SHD, SHE, SHF;
+            public ushort SHPadding; // pad to multiple of 4 bytes
         }
+
+        public struct ChunkInfo
+        {
+            public uint ColR, ColG, ColB, ColA;
+            public float2 PosX, PosY, PosZ;
+            public uint SclX, SclY, SclZ;
+            public uint SHR, SHG, SHB;
+        }
+
+        [Serializable]
+        public struct CameraInfo
+        {
+            [FormerlySerializedAs("pos")] public Vector3 Pos;
+            [FormerlySerializedAs("axisX")] public Vector3 AxisX;
+            [FormerlySerializedAs("axisY")] public Vector3 AxisY;
+            [FormerlySerializedAs("axisZ")] public Vector3 AxisZ;
+            [FormerlySerializedAs("fov")] public float FOV;
+        }
+
+        #endregion Types
 
         public void Initialize(int splats, VectorFormat formatPos, VectorFormat formatScale, ColorFormat formatColor, SHFormat formatSh, Vector3 bMin, Vector3 bMax, CameraInfo[] cameraInfos)
         {
-            m_SplatCount = splats;
-            m_FormatVersion = kCurrentVersion;
-            m_PosFormat = formatPos;
-            m_ScaleFormat = formatScale;
-            m_ColorFormat = formatColor;
-            m_SHFormat = formatSh;
-            m_Cameras = cameraInfos;
-            m_BoundsMin = bMin;
-            m_BoundsMax = bMax;
+            _splatCount = splats;
+            _formatVersion = kCurrentVersion;
+            _posFormat = formatPos;
+            _scaleFormat = formatScale;
+            _colFormat = formatColor;
+            _shFormat = formatSh;
+            _cameras = cameraInfos;
+            _boundsMin = bMin;
+            _boundsMax = bMax;
         }
 
         public void SetDataHash(Hash128 hash)
         {
-            m_DataHash = hash;
+            _dataHash = hash;
         }
 
-        public void SetAssetFiles(TextAsset dataChunk, TextAsset dataPos, TextAsset dataOther, TextAsset dataColor, TextAsset dataSh)
+        public void SetSplatFiles(TextAsset dataChunk, TextAsset dataPos, TextAsset dataOther, TextAsset dataColor, TextAsset dataSh)
         {
-            m_ChunkData = dataChunk;
-            m_PosData = dataPos;
-            m_OtherData = dataOther;
-            m_ColorData = dataColor;
-            m_SHData = dataSh;
+            _chunkData = dataChunk;
+            _posData = dataPos;
+            _otherData = dataOther;
+            _colorData = dataColor;
+            _shData = dataSh;
         }
 
         public static int GetOtherSizeNoSHIndex(VectorFormat scaleFormat)
@@ -140,11 +194,11 @@ namespace GaussianSplatting.Runtime
                 SHFormat.Float16 => splatCount,
                 SHFormat.Norm11 => splatCount,
                 SHFormat.Norm6 => splatCount,
-                SHFormat.Cluster64k => 64 * 1024,
-                SHFormat.Cluster32k => 32 * 1024,
-                SHFormat.Cluster16k => 16 * 1024,
-                SHFormat.Cluster8k => 8 * 1024,
-                SHFormat.Cluster4k => 4 * 1024,
+                SHFormat.Cluster64K => 64 * 1024,
+                SHFormat.Cluster32K => 32 * 1024,
+                SHFormat.Cluster16K => 16 * 1024,
+                SHFormat.Cluster8K => 8 * 1024,
+                SHFormat.Cluster4K => 4 * 1024,
                 _ => throw new ArgumentOutOfRangeException(nameof(fmt), fmt, null)
             };
         }
@@ -163,9 +217,9 @@ namespace GaussianSplatting.Runtime
         {
             return format switch
             {
-                ColorFormat.Float32x4 => GraphicsFormat.R32G32B32A32_SFloat,
-                ColorFormat.Float16x4 => GraphicsFormat.R16G16B16A16_SFloat,
-                ColorFormat.Norm8x4 => GraphicsFormat.R8G8B8A8_UNorm,
+                ColorFormat.Float32X4 => GraphicsFormat.R32G32B32A32_SFloat,
+                ColorFormat.Float16X4 => GraphicsFormat.R16G16B16A16_SFloat,
+                ColorFormat.Norm8X4 => GraphicsFormat.R8G8B8A8_UNorm,
                 ColorFormat.BC7 => GraphicsFormat.RGBA_BC7_UNorm,
                 _ => throw new ArgumentOutOfRangeException(nameof(format), format, null)
             };
@@ -200,48 +254,6 @@ namespace GaussianSplatting.Runtime
         {
             int chunkCount = (splatCount + kChunkSize - 1) / kChunkSize;
             return chunkCount * UnsafeUtility.SizeOf<ChunkInfo>();
-        }
-
-        [SerializeField] VectorFormat m_PosFormat = VectorFormat.Norm11;
-        [SerializeField] VectorFormat m_ScaleFormat = VectorFormat.Norm11;
-        [SerializeField] SHFormat m_SHFormat = SHFormat.Norm11;
-        [SerializeField] ColorFormat m_ColorFormat;
-
-        [SerializeField] TextAsset m_PosData;
-        [SerializeField] TextAsset m_ColorData;
-        [SerializeField] TextAsset m_OtherData;
-        [SerializeField] TextAsset m_SHData;
-        // Chunk data is optional (if data formats are fully lossless then there's no chunking)
-        [SerializeField] TextAsset m_ChunkData;
-
-        [SerializeField] CameraInfo[] m_Cameras;
-
-        public VectorFormat posFormat => m_PosFormat;
-        public VectorFormat scaleFormat => m_ScaleFormat;
-        public SHFormat shFormat => m_SHFormat;
-        public ColorFormat colorFormat => m_ColorFormat;
-
-        public TextAsset posData => m_PosData;
-        public TextAsset colorData => m_ColorData;
-        public TextAsset otherData => m_OtherData;
-        public TextAsset shData => m_SHData;
-        public TextAsset chunkData => m_ChunkData;
-        public CameraInfo[] cameras => m_Cameras;
-
-        public struct ChunkInfo
-        {
-            public uint colR, colG, colB, colA;
-            public float2 posX, posY, posZ;
-            public uint sclX, sclY, sclZ;
-            public uint shR, shG, shB;
-        }
-
-        [Serializable]
-        public struct CameraInfo
-        {
-            public Vector3 pos;
-            public Vector3 axisX, axisY, axisZ;
-            public float fov;
         }
     }
 }

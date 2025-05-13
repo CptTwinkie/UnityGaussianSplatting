@@ -50,23 +50,23 @@ namespace GaussianSplatting.Editor.Utils
     // - No JIT Emit support to parse structures quickly
     // - Limited to parsing <2GB JSON files (due to int.MaxValue)
     // - Parsing of abstract classes or interfaces is NOT supported and will throw an exception.
-    public static class JSONParser
+    public static class JsonParser
     {
-        [ThreadStatic] static Stack<List<string>> splitArrayPool;
-        [ThreadStatic] static StringBuilder stringBuilder;
-        [ThreadStatic] static Dictionary<Type, Dictionary<string, FieldInfo>> fieldInfoCache;
-        [ThreadStatic] static Dictionary<Type, Dictionary<string, PropertyInfo>> propertyInfoCache;
+        [ThreadStatic] private static Stack<List<string>> _splitArrayPool;
+        [ThreadStatic] private static StringBuilder _stringBuilder;
+        [ThreadStatic] private static Dictionary<Type, Dictionary<string, FieldInfo>> _fieldInfoCache;
+        [ThreadStatic] private static Dictionary<Type, Dictionary<string, PropertyInfo>> _propertyInfoCache;
 
         public static T FromJson<T>(this string json)
         {
             // Initialize, if needed, the ThreadStatic variables
-            if (propertyInfoCache == null) propertyInfoCache = new Dictionary<Type, Dictionary<string, PropertyInfo>>();
-            if (fieldInfoCache == null) fieldInfoCache = new Dictionary<Type, Dictionary<string, FieldInfo>>();
-            if (stringBuilder == null) stringBuilder = new StringBuilder();
-            if (splitArrayPool == null) splitArrayPool = new Stack<List<string>>();
+            if (_propertyInfoCache == null) _propertyInfoCache = new Dictionary<Type, Dictionary<string, PropertyInfo>>();
+            if (_fieldInfoCache == null) _fieldInfoCache = new Dictionary<Type, Dictionary<string, FieldInfo>>();
+            if (_stringBuilder == null) _stringBuilder = new StringBuilder();
+            if (_splitArrayPool == null) _splitArrayPool = new Stack<List<string>>();
 
             //Remove all whitespace not within strings to make parsing simpler
-            stringBuilder.Length = 0;
+            _stringBuilder.Length = 0;
             for (int i = 0; i < json.Length; i++)
             {
                 char c = json[i];
@@ -78,45 +78,45 @@ namespace GaussianSplatting.Editor.Utils
                 if (char.IsWhiteSpace(c))
                     continue;
 
-                stringBuilder.Append(c);
+                _stringBuilder.Append(c);
             }
 
             //Parse the thing!
-            return (T)ParseValue(typeof(T), stringBuilder.ToString());
+            return (T)ParseValue(typeof(T), _stringBuilder.ToString());
         }
 
-        static int AppendUntilStringEnd(bool appendEscapeCharacter, int startIdx, string json)
+        private static int AppendUntilStringEnd(bool appendEscapeCharacter, int startIdx, string json)
         {
-            stringBuilder.Append(json[startIdx]);
+            _stringBuilder.Append(json[startIdx]);
             for (int i = startIdx + 1; i < json.Length; i++)
             {
                 if (json[i] == '\\')
                 {
                     if (appendEscapeCharacter)
-                        stringBuilder.Append(json[i]);
-                    stringBuilder.Append(json[i + 1]);
+                        _stringBuilder.Append(json[i]);
+                    _stringBuilder.Append(json[i + 1]);
                     i++;//Skip next character as it is escaped
                 }
                 else if (json[i] == '"')
                 {
-                    stringBuilder.Append(json[i]);
+                    _stringBuilder.Append(json[i]);
                     return i;
                 }
                 else
-                    stringBuilder.Append(json[i]);
+                    _stringBuilder.Append(json[i]);
             }
             return json.Length - 1;
         }
 
         //Splits { <value>:<value>, <value>:<value> } and [ <value>, <value> ] into a list of <value> strings
-        static List<string> Split(string json)
+        private static List<string> Split(string json)
         {
-            List<string> splitArray = splitArrayPool.Count > 0 ? splitArrayPool.Pop() : new List<string>();
+            List<string> splitArray = _splitArrayPool.Count > 0 ? _splitArrayPool.Pop() : new List<string>();
             splitArray.Clear();
             if (json.Length == 2)
                 return splitArray;
             int parseDepth = 0;
-            stringBuilder.Length = 0;
+            _stringBuilder.Length = 0;
             for (int i = 1; i < json.Length - 1; i++)
             {
                 switch (json[i])
@@ -136,17 +136,17 @@ namespace GaussianSplatting.Editor.Utils
                     case ':':
                         if (parseDepth == 0)
                         {
-                            splitArray.Add(stringBuilder.ToString());
-                            stringBuilder.Length = 0;
+                            splitArray.Add(_stringBuilder.ToString());
+                            _stringBuilder.Length = 0;
                             continue;
                         }
                         break;
                 }
 
-                stringBuilder.Append(json[i]);
+                _stringBuilder.Append(json[i]);
             }
 
-            splitArray.Add(stringBuilder.ToString());
+            splitArray.Add(_stringBuilder.ToString());
 
             return splitArray;
         }
@@ -171,10 +171,9 @@ namespace GaussianSplatting.Editor.Utils
                         }
                         if (json[i + 1] == 'u' && i + 5 < json.Length - 1)
                         {
-                            UInt32 c = 0;
-                            if (UInt32.TryParse(json.Substring(i + 2, 4), System.Globalization.NumberStyles.AllowHexSpecifier, null, out c))
+                            if (UInt32.TryParse(json.Substring(i + 2, 4), System.Globalization.NumberStyles.AllowHexSpecifier, null, out UInt32 result))
                             {
-                                parseStringBuilder.Append((char)c);
+                                parseStringBuilder.Append((char)result);
                                 i += 5;
                                 continue;
                             }
@@ -191,14 +190,12 @@ namespace GaussianSplatting.Editor.Utils
             }
             if (type == typeof(decimal))
             {
-                decimal result;
-                decimal.TryParse(json, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out result);
+                decimal.TryParse(json, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out decimal result);
                 return result;
             }
             if (type == typeof(DateTime))
             {
-                DateTime result;
-                DateTime.TryParse(json.Replace("\"",""), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out result);
+                DateTime.TryParse(json.Replace("\"",""), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out DateTime result);
                 return result;
             }
             if (json == "null")
@@ -221,27 +218,27 @@ namespace GaussianSplatting.Editor.Utils
             if (type.IsArray)
             {
                 Type arrayType = type.GetElementType();
-                if (json[0] != '[' || json[json.Length - 1] != ']')
+                if (json[0] != '[' || json[^1] != ']')
                     return null;
 
                 List<string> elems = Split(json);
                 Array newArray = Array.CreateInstance(arrayType, elems.Count);
                 for (int i = 0; i < elems.Count; i++)
                     newArray.SetValue(ParseValue(arrayType, elems[i]), i);
-                splitArrayPool.Push(elems);
+                _splitArrayPool.Push(elems);
                 return newArray;
             }
             if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>))
             {
                 Type listType = type.GetGenericArguments()[0];
-                if (json[0] != '[' || json[json.Length - 1] != ']')
+                if (json[0] != '[' || json[^1] != ']')
                     return null;
 
                 List<string> elems = Split(json);
                 var list = (IList)type.GetConstructor(new Type[] { typeof(int) }).Invoke(new object[] { elems.Count });
                 for (int i = 0; i < elems.Count; i++)
                     list.Add(ParseValue(listType, elems[i]));
-                splitArrayPool.Push(elems);
+                _splitArrayPool.Push(elems);
                 return list;
             }
             if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(Dictionary<,>))
@@ -257,7 +254,7 @@ namespace GaussianSplatting.Editor.Utils
                 if (keyType != typeof(string))
                     return null;
                 //Must be a valid dictionary element
-                if (json[0] != '{' || json[json.Length - 1] != '}')
+                if (json[0] != '{' || json[^1] != '}')
                     return null;
                 //The list is split into key/value pairs only, this means the split must be divisible by 2 to be valid JSON
                 List<string> elems = Split(json);
@@ -279,7 +276,7 @@ namespace GaussianSplatting.Editor.Utils
             {
                 return ParseAnonymousValue(json);
             }
-            if (json[0] == '{' && json[json.Length - 1] == '}')
+            if (json[0] == '{' && json[^1] == '}')
             {
                 return ParseObject(type, json);
             }
@@ -287,11 +284,11 @@ namespace GaussianSplatting.Editor.Utils
             return null;
         }
 
-        static object ParseAnonymousValue(string json)
+        private static object ParseAnonymousValue(string json)
         {
             if (json.Length == 0)
                 return null;
-            if (json[0] == '{' && json[json.Length - 1] == '}')
+            if (json[0] == '{' && json[^1] == '}')
             {
                 List<string> elems = Split(json);
                 if (elems.Count % 2 != 0)
@@ -301,7 +298,7 @@ namespace GaussianSplatting.Editor.Utils
                     dict[elems[i].Substring(1, elems[i].Length - 2)] = ParseAnonymousValue(elems[i + 1]);
                 return dict;
             }
-            if (json[0] == '[' && json[json.Length - 1] == ']')
+            if (json[0] == '[' && json[^1] == ']')
             {
                 List<string> items = Split(json);
                 var finalList = new List<object>(items.Count);
@@ -309,7 +306,7 @@ namespace GaussianSplatting.Editor.Utils
                     finalList.Add(ParseAnonymousValue(items[i]));
                 return finalList;
             }
-            if (json[0] == '"' && json[json.Length - 1] == '"')
+            if (json[0] == '"' && json[^1] == '"')
             {
                 string str = json.Substring(1, json.Length - 2);
                 return str.Replace("\\", string.Empty);
@@ -318,14 +315,12 @@ namespace GaussianSplatting.Editor.Utils
             {
                 if (json.Contains("."))
                 {
-                    double result;
-                    double.TryParse(json, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out result);
+                    double.TryParse(json, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double result);
                     return result;
                 }
                 else
                 {
-                    int result;
-                    int.TryParse(json, out result);
+                    int.TryParse(json, out int result);
                     return result;
                 }
             }
@@ -337,7 +332,7 @@ namespace GaussianSplatting.Editor.Utils
             return null;
         }
 
-        static Dictionary<string, T> CreateMemberNameDictionary<T>(T[] members) where T : MemberInfo
+        private static Dictionary<string, T> CreateMemberNameDictionary<T>(T[] members) where T : MemberInfo
         {
             Dictionary<string, T> nameToMember = new Dictionary<string, T>(StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i < members.Length; i++)
@@ -360,41 +355,44 @@ namespace GaussianSplatting.Editor.Utils
             return nameToMember;
         }
 
-        static object ParseObject(Type type, string json)
+        private static object ParseObject(Type type, string json)
         {
             object instance = FormatterServices.GetUninitializedObject(type);
 
             //The list is split into key/value pairs only, this means the split must be divisible by 2 to be valid JSON
             List<string> elems = Split(json);
+
             if (elems.Count % 2 != 0)
                 return instance;
 
-            Dictionary<string, FieldInfo> nameToField;
-            Dictionary<string, PropertyInfo> nameToProperty;
-            if (!fieldInfoCache.TryGetValue(type, out nameToField))
+            if (!_fieldInfoCache.TryGetValue(type, out Dictionary<string, FieldInfo> nameToField))
             {
                 nameToField = CreateMemberNameDictionary(type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.FlattenHierarchy));
-                fieldInfoCache.Add(type, nameToField);
+                _fieldInfoCache.Add(type, nameToField);
             }
-            if (!propertyInfoCache.TryGetValue(type, out nameToProperty))
+
+            if (!_propertyInfoCache.TryGetValue(type, out Dictionary<string, PropertyInfo> nameToProperty))
             {
                 nameToProperty = CreateMemberNameDictionary(type.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.FlattenHierarchy));
-                propertyInfoCache.Add(type, nameToProperty);
+                _propertyInfoCache.Add(type, nameToProperty);
             }
 
             for (int i = 0; i < elems.Count; i += 2)
             {
                 if (elems[i].Length <= 2)
                     continue;
+
                 string key = elems[i].Substring(1, elems[i].Length - 2);
                 string value = elems[i + 1];
 
-                FieldInfo fieldInfo;
-                PropertyInfo propertyInfo;
-                if (nameToField.TryGetValue(key, out fieldInfo))
+                if (nameToField.TryGetValue(key, out FieldInfo fieldInfo))
+                {
                     fieldInfo.SetValue(instance, ParseValue(fieldInfo.FieldType, value));
-                else if (nameToProperty.TryGetValue(key, out propertyInfo))
+                }
+                else if (nameToProperty.TryGetValue(key, out PropertyInfo propertyInfo))
+                {
                     propertyInfo.SetValue(instance, ParseValue(propertyInfo.PropertyType, value), null);
+                }
             }
 
             return instance;

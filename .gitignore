@@ -2,6 +2,9 @@
 *.sln
 .DS_Store
 .idea
+*.sln.DotSettings.user
+*.vsconfig
+.vs/
 
 /builds/*
 /images/*
@@ -24,4 +27,3 @@
 /projects/**/Temp/*
 /projects/**/UserSettings/*
 /projects/**/obj/*
-*.sln.DotSettings.user

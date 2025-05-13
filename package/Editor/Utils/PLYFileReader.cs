@@ -9,7 +9,7 @@ using Unity.Collections;
 
 namespace GaussianSplatting.Editor.Utils
 {
-    public static class PLYFileReader
+    public static class PlyFileReader
     {
         public static void ReadFileHeader(string filePath, out int vertexCount, out int vertexStride, out List<(string, ElementType)> attrs)
         {
@@ -22,7 +22,7 @@ namespace GaussianSplatting.Editor.Utils
             ReadHeaderImpl(filePath, out vertexCount, out vertexStride, out attrs, fs);
         }
 
-        static void ReadHeaderImpl(string filePath, out int vertexCount, out int vertexStride, out List<(string, ElementType)> attrs, FileStream fs)
+        private static void ReadHeaderImpl(string filePath, out int vertexCount, out int vertexStride, out List<(string, ElementType)> attrs, FileStream fs)
         {
             // C# arrays and NativeArrays make it hard to have a "byte" array larger than 2GB :/
             if (fs.Length >= 2 * 1024 * 1024 * 1024L)
@@ -32,16 +32,16 @@ namespace GaussianSplatting.Editor.Utils
             vertexCount = 0;
             vertexStride = 0;
             attrs = new List<(string, ElementType)>();
-            const int kMaxHeaderLines = 9000;
-            bool got_binary_le = false;
-            for (int lineIdx = 0; lineIdx < kMaxHeaderLines; ++lineIdx)
+            const int kmaxHeaderLines = 9000;
+            bool gotBinaryLe = false;
+            for (int lineIdx = 0; lineIdx < kmaxHeaderLines; ++lineIdx)
             {
                 var line = ReadLine(fs);
                 if (line == "end_header" || line.Length == 0)
                     break;
                 var tokens = line.Split(' ');
                 if (tokens.Length == 3 && tokens[0] == "format" && tokens[1] == "binary_little_endian" && tokens[2] == "1.0")
-                    got_binary_le = true;
+                    gotBinaryLe = true;
                 if (tokens.Length == 3 && tokens[0] == "element" && tokens[1] == "vertex")
                     vertexCount = int.Parse(tokens[2]);
                 if (tokens.Length == 3 && tokens[0] == "property")
@@ -58,7 +58,7 @@ namespace GaussianSplatting.Editor.Utils
                 }
             }
 
-            if (!got_binary_le)
+            if (!gotBinaryLe)
             {
                 throw new IOException($"PLY {filePath} not supported: needs to be binary, little endian PLY format");
             }
@@ -95,7 +95,7 @@ namespace GaussianSplatting.Editor.Utils
             };
         }
 
-        static string ReadLine(FileStream fs)
+        private static string ReadLine(FileStream fs)
         {
             var byteBuffer = new List<byte>();
             while (true)
