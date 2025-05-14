@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 
 using System;
+using System.IO;
+using Newtonsoft.Json;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
 using UnityEngine;
@@ -9,7 +11,8 @@ using UnityEngine.Serialization;
 
 namespace GaussianSplatting.Runtime
 {
-    public class GaussianSplat : UnityEngine.Object
+    [JsonObject(MemberSerialization.OptIn)]
+    public class GaussianSplat
     {
         #region Data
 
@@ -18,44 +21,66 @@ namespace GaussianSplatting.Runtime
         public const int kTextureWidth = 2048; // allows up to 32M splats on desktop GPU (2k width x 16k height)
         public const int kMaxSplats = 8_600_000; // mostly due to 2GB GPU buffer size limit when exporting a splat (2GB / 248B is just over 8.6M)
 
-        [SerializeField] private VectorFormat _posFormat = VectorFormat.Norm11;
-        [SerializeField] private VectorFormat _scaleFormat = VectorFormat.Norm11;
-        [SerializeField] private SHFormat _shFormat = SHFormat.Norm11;
-        [SerializeField] private ColorFormat _colFormat;
-
+        // Serialized fields retained for UI information only
+        [JsonProperty] public VectorFormat PosFormat = VectorFormat.Norm11;
+        [JsonProperty] public VectorFormat ScaleFormat = VectorFormat.Norm11;
+        [JsonProperty] public SHFormat ShFormat = SHFormat.Norm11;
+        [JsonProperty] public ColorFormat ColFormat;
         [SerializeField] private TextAsset _posData;
         [SerializeField] private TextAsset _colorData;
         [SerializeField] private TextAsset _otherData;
         [SerializeField] private TextAsset _shData;
-        // Chunk data is optional (if data formats are fully lossless then there's no chunking)
+        /// <summary> Chunk data is optional (if data formats are fully lossless then there's no chunking) </summary>
         [SerializeField] private TextAsset _chunkData;
-
-        [SerializeField] private CameraInfo[] _cameras;
-
-        [SerializeField] private int _formatVersion;
-        [SerializeField] private int _splatCount;
-        [SerializeField] private Vector3 _boundsMin;
-        [SerializeField] private Vector3 _boundsMax;
-        [SerializeField] private Hash128 _dataHash;
+        [JsonProperty] public CameraInfo[] Cameras;
+        [JsonProperty] public int FormatVersion;
+        [JsonProperty] public int SplatCount;
+        [JsonConverter(typeof(JsonVector3Converter))]
+        [JsonProperty] public Vector3 BoundsMin;
+        [JsonConverter(typeof(JsonVector3Converter))]
+        [JsonProperty] public Vector3 BoundsMax;
+        [JsonConverter(typeof(JsonHash128Converter))]
+        [JsonProperty] public Hash128 DataHash;
 
         /// <summary> Retained from ScriptableObject for convenience. </summary>
         public string Name;
 
-        public int FormatVersion => _formatVersion;
-        public int SplatCount => _splatCount;
-        public Vector3 BoundsMin => _boundsMin;
-        public Vector3 BoundsMax => _boundsMax;
-        public Hash128 DataHash => _dataHash;
-        public VectorFormat PosFormat => _posFormat;
-        public VectorFormat ScaleFormat => _scaleFormat;
-        public SHFormat ShFormat => _shFormat;
-        public ColorFormat ColFormat => _colFormat;
+        [JsonProperty] public string PosDataPath;
+        [JsonProperty] public string ColorDataPath;
+        [JsonProperty] public string OtherDataPath;
+        [JsonProperty] public string SHDataPath;
+        [JsonProperty] public string ChunkDataPath;
+
+        /*
+         * Serialize
+          FormatVersion (int)
+          DataHash (string)
+          SplatCount (int)
+          BoundsMin (Vector3)
+          BoundsMax (Vector3)
+          PosFormat (int)
+          ScaleFormat (int)
+          SHFormat (int)
+          ColFormat (int)
+          PosDataPath (string)
+          ColorDataPath (string)
+          OtherDataPath (string)
+          SHDataPath (string)
+          ChunkDataPath (string)
+          Cameras (array of CameraInfo)
+        */
+
+        public bool IsUsingChunks =>
+            PosFormat   != VectorFormat.Float32 ||
+            ScaleFormat != VectorFormat.Float32 ||
+            ColFormat   != ColorFormat.Float32X4 ||
+            ShFormat    != SHFormat.Float32;
+
         public TextAsset PosData => _posData;
         public TextAsset ColorData => _colorData;
         public TextAsset OtherData => _otherData;
         public TextAsset SHData => _shData;
         public TextAsset ChunkData => _chunkData;
-        public CameraInfo[] Cameras => _cameras;
 
         #endregion Data
 
@@ -89,6 +114,7 @@ namespace GaussianSplatting.Runtime
             Norm8X4,
             BC7,
         }
+
         public static int GetColorSize(ColorFormat fmt)
         {
             return fmt switch
@@ -156,29 +182,29 @@ namespace GaussianSplatting.Runtime
 
         public void Initialize(int splats, VectorFormat formatPos, VectorFormat formatScale, ColorFormat formatColor, SHFormat formatSh, Vector3 bMin, Vector3 bMax, CameraInfo[] cameraInfos)
         {
-            _splatCount = splats;
-            _formatVersion = kCurrentVersion;
-            _posFormat = formatPos;
-            _scaleFormat = formatScale;
-            _colFormat = formatColor;
-            _shFormat = formatSh;
-            _cameras = cameraInfos;
-            _boundsMin = bMin;
-            _boundsMax = bMax;
+            SplatCount = splats;
+            FormatVersion = kCurrentVersion;
+            PosFormat = formatPos;
+            ScaleFormat = formatScale;
+            ColFormat = formatColor;
+            ShFormat = formatSh;
+            Cameras = cameraInfos;
+            BoundsMin = bMin;
+            BoundsMax = bMax;
+        }
+
+        public void SetSplatFiles()
+        {
+            _chunkData = IsUsingChunks ? new TextAsset(File.ReadAllBytes(ChunkDataPath)) : null;
+            _posData = new TextAsset(File.ReadAllBytes(PosDataPath));
+            _otherData = new TextAsset(File.ReadAllBytes(OtherDataPath));
+            _colorData = new TextAsset(File.ReadAllBytes(ColorDataPath));
+            _shData = new TextAsset(File.ReadAllBytes(SHDataPath));
         }
 
         public void SetDataHash(Hash128 hash)
         {
-            _dataHash = hash;
-        }
-
-        public void SetSplatFiles(TextAsset dataChunk, TextAsset dataPos, TextAsset dataOther, TextAsset dataColor, TextAsset dataSh)
-        {
-            _chunkData = dataChunk;
-            _posData = dataPos;
-            _otherData = dataOther;
-            _colorData = dataColor;
-            _shData = dataSh;
+            DataHash = hash;
         }
 
         public static int GetOtherSizeNoSHIndex(VectorFormat scaleFormat)

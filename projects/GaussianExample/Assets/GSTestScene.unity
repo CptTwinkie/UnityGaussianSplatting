@@ -301,13 +301,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1462254335}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.039000556, y: -0.42679158, z: 0.0026308782, w: -0.90350485}
-  m_LocalPosition: {x: -3.0026817, y: -0.82006466, z: -2.501085}
+  m_LocalRotation: {x: 0.032927863, y: -0.19365562, z: 0.021063676, w: 0.98029053}
+  m_LocalPosition: {x: 66.7, y: 24.18, z: -79.8}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 4.17, y: -22.29, z: 1.64}
 --- !u!1 &1609192433
 GameObject:
   m_ObjectHideFlags: 0
@@ -347,11 +347,11 @@ MonoBehaviour:
   Mode: 0
   PointDisplaySize: 3
   Cutouts: []
-  ShaderSplats: {fileID: 0}
-  ShaderComposite: {fileID: 0}
-  ShaderDebugPoints: {fileID: 0}
-  ShaderDebugBoxes: {fileID: 0}
-  CsSplatUtilities: {fileID: 0}
+  ShaderSplats: {fileID: 4800000, guid: ed800126ae8844a67aad1974ddddd59c, type: 3}
+  ShaderComposite: {fileID: 4800000, guid: 7e184af7d01193a408eb916d8acafff9, type: 3}
+  ShaderDebugPoints: {fileID: 4800000, guid: b44409fc67214394f8f47e4e2648425e, type: 3}
+  ShaderDebugBoxes: {fileID: 4800000, guid: 4006f2680fd7c8b4cbcb881454c782be, type: 3}
+  CsSplatUtilities: {fileID: 7200000, guid: ec84f78b836bd4f96a105d6b804f08bd, type: 3}
 --- !u!4 &1609192435
 Transform:
   m_ObjectHideFlags: 0

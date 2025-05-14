@@ -447,8 +447,13 @@ namespace GaussianSplatting.Runtime
                 _sorterArgs.Resources = GpuSorting.SupportResources.Load((uint)count);
         }
 
-        private bool ResourcesAreSetUp => ShaderSplats != null && ShaderComposite != null && ShaderDebugPoints != null &&
-                                  ShaderDebugBoxes != null && CsSplatUtilities != null && SystemInfo.supportsComputeShaders;
+        private bool ResourcesAreSetUp => 
+            ShaderSplats != null && 
+            ShaderComposite != null && 
+            ShaderDebugPoints != null &&
+            ShaderDebugBoxes != null && 
+            CsSplatUtilities != null && 
+            SystemInfo.supportsComputeShaders;
 
         public void EnsureMaterials()
         {

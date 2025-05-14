@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT
 
+using System;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Unity.Mathematics;
+using UnityEngine;
 
 namespace GaussianSplatting.Runtime
 {
@@ -109,6 +113,49 @@ namespace GaussianSplatting.Runtime
             t = (t ^ (t >> 1)) & 0x3333;        // --EF--GH--AB--CD
             t = (t ^ (t >> 2)) & 0x0f0f;        // ----EFGH----ABCD
             return new uint2(t & 0xF, t >> 8);  // --------EFGHABCD
+        }
+
+        public static JsonSerializer GetSplatSerializer()
+        {
+            var serializer = new JsonSerializer();
+            serializer.Formatting = Formatting.Indented;
+            return serializer;
+        }
+    }
+
+    public class JsonVector3Converter : JsonConverter<Vector3>
+    {
+        public override void WriteJson(JsonWriter writer, Vector3 value, JsonSerializer serializer)
+        {
+            JObject j = new JObject {{"x", value.x}, {"y", value.y}, {"z", value.z}};
+
+            j.WriteTo(writer);
+        }
+
+        //CanRead is false which means the default implementation will be used instead.
+        public override Vector3 ReadJson(JsonReader reader, Type objectType, Vector3 existingValue, bool hasExistingValue, JsonSerializer serializer)
+        {
+            return existingValue;
+        }
+
+        public override bool CanWrite => true;
+
+        public override bool CanRead => false;
+    }
+
+    public class JsonHash128Converter : JsonConverter<Hash128>
+    {
+        public override void WriteJson(JsonWriter writer, Hash128 value, JsonSerializer serializer)
+        {
+            JObject j = new JObject {{"hash", value.ToString()}};
+            j.WriteTo(writer);
+        }
+
+        public override Hash128 ReadJson(JsonReader reader, Type objectType, Hash128 existingValue, bool hasExistingValue, JsonSerializer serializer)
+        {
+            JObject jo = JObject.Load(reader);
+            var value = jo.GetValue("hash").ToString();
+            return Hash128.Parse(value);
         }
     }
 }
