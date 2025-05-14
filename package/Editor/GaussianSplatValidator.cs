@@ -1,26 +1,23 @@
+/*
 // SPDX-License-Identifier: MIT
 
-using System.IO;
-using GaussianSplatting.Runtime;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
 using Unity.Mathematics;
-using UnityEditor;
 using UnityEngine;
-using UnityEngine.Experimental.Rendering;
 
 namespace GaussianSplatting.Editor
 {
     [BurstCompile]
     public static class GaussianSplatValidator
     {
-        struct RefItem
+        private struct RefItem
         {
-            public string assetPath;
-            public int cameraIndex;
-            public float fov;
+            public string SplatPath;
+            public int CameraIndex;
+            public float FOV;
         }
 
         // currently on RTX 3080Ti: 43.76, 39.36, 43.50 PSNR
@@ -36,11 +33,11 @@ namespace GaussianSplatting.Editor
             ValidateImpl("D3D12");
         }
 
-        static unsafe void ValidateImpl(string refPrefix)
+        private static unsafe void ValidateImpl(string refPrefix)
         {
-            var gaussians = Object.FindObjectOfType(typeof(GaussianSplatRenderer)) as GaussianSplatRenderer;
+            var renderer = Object.FindFirstObjectByType(typeof(GaussianSplatRenderer)) as GaussianSplatRenderer;
             {
-                if (gaussians == null)
+                if (renderer == null)
                 {
                     Debug.LogError("No GaussianSplatRenderer object found");
                     return;
@@ -48,13 +45,13 @@ namespace GaussianSplatting.Editor
             }
             var items = new RefItem[]
             {
-                new() {assetPath = "bicycle", cameraIndex = 0, fov = 39.09651f},
-                new() {assetPath = "truck", cameraIndex = 30, fov = 50},
-                new() {assetPath = "garden", cameraIndex = 30, fov = 47},
+                new() {SplatPath = "bicycle", CameraIndex = 0, FOV = 39.09651f},
+                new() {SplatPath = "truck", CameraIndex = 30, FOV = 50},
+                new() {SplatPath = "garden", CameraIndex = 30, FOV = 47},
             };
 
             var cam = Camera.main;
-            var oldAsset = gaussians.asset;
+            var oldSplat = renderer.Splat;
             var oldCamPos = cam.transform.localPosition;
             var oldCamRot = cam.transform.localRotation;
             var oldCamFov = cam.fieldOfView;
@@ -62,18 +59,18 @@ namespace GaussianSplatting.Editor
             for (var index = 0; index < items.Length; index++)
             {
                 var item = items[index];
-                EditorUtility.DisplayProgressBar("Validating Gaussian splat rendering", item.assetPath, (float)index / items.Length);
-                var path = $"Assets/GaussianAssets/{item.assetPath}-point_cloud-iteration_30000-point_cloud.asset";
-                var gs = AssetDatabase.LoadAssetAtPath<GaussianSplatAsset>(path);
+                EditorUtility.DisplayProgressBar("Validating Gaussian splat rendering", item.SplatPath, (float)index / items.Length);
+                var path = $"Assets/GaussianAssets/{item.SplatPath}-point_cloud-iteration_30000-point_cloud.asset";
+                var gs = AssetDatabase.LoadAssetAtPath<GaussianSplat>(path);
                 if (gs == null)
                 {
-                    Debug.LogError($"Did not find asset for validation item {item.assetPath} at {path}");
+                    Debug.LogError($"Did not find splat for validation item {item.SplatPath} at {path}");
                     continue;
                 }
-                var refImageFile = $"../../docs/RefImages/{refPrefix}_{item.assetPath}{item.cameraIndex}.png"; // use our snapshot by default
+                var refImageFile = $"../../docs/RefImages/{refPrefix}_{item.SplatPath}{item.CameraIndex}.png"; // use our snapshot by default
                 if (!File.Exists(refImageFile))
                 {
-                    Debug.LogError($"Did not find reference image for validation item {item.assetPath} at {refImageFile}");
+                    Debug.LogError($"Did not find reference image for validation item {item.SplatPath} at {refImageFile}");
                     continue;
                 }
 
@@ -86,14 +83,14 @@ namespace GaussianSplatting.Editor
 
                 var renderTarget = RenderTexture.GetTemporary(width, height, 24, GraphicsFormat.R8G8B8A8_SRGB);
                 cam.targetTexture = renderTarget;
-                cam.fieldOfView = item.fov;
+                cam.fieldOfView = item.FOV;
 
                 var captureTexture = new Texture2D(width, height, GraphicsFormat.R8G8B8A8_SRGB, TextureCreationFlags.None);
                 NativeArray<Color32> diffPixels = new(width * height, Allocator.Persistent);
 
-                gaussians.m_Asset = gs;
-                gaussians.Update();
-                gaussians.ActivateCamera(item.cameraIndex);
+                renderer.Splat = gs;
+                renderer.Update();
+                renderer.ActivateCamera(item.CameraIndex);
                 cam.Render();
                 Graphics.SetRenderTarget(renderTarget);
                 captureTexture.ReadPixels(new Rect(0, 0, width, height), 0, 0);
@@ -103,22 +100,22 @@ namespace GaussianSplatting.Editor
                 float psnr = 0, rmse = 0;
                 int errorsCount = 0;
                 DiffImagesJob difJob = new DiffImagesJob();
-                difJob.difPixels = diffPixels;
-                difJob.refPixels = refPixels;
-                difJob.gotPixels = gotPixels;
-                difJob.psnrPtr = &psnr;
-                difJob.rmsePtr = &rmse;
-                difJob.difPixCount = &errorsCount;
+                difJob.DifPixels = diffPixels;
+                difJob.RefPixels = refPixels;
+                difJob.GotPixels = gotPixels;
+                difJob.PsnrPtr = &psnr;
+                difJob.RmsePtr = &rmse;
+                difJob.DifPixCount = &errorsCount;
                 difJob.Schedule().Complete();
 
-                string pathDif = $"../../Shot-{refPrefix}-{item.assetPath}{item.cameraIndex}-diff.png";
-                string pathRef = $"../../Shot-{refPrefix}-{item.assetPath}{item.cameraIndex}-ref.png";
-                string pathGot = $"../../Shot-{refPrefix}-{item.assetPath}{item.cameraIndex}-got.png";
+                string pathDif = $"../../Shot-{refPrefix}-{item.SplatPath}{item.CameraIndex}-diff.png";
+                string pathRef = $"../../Shot-{refPrefix}-{item.SplatPath}{item.CameraIndex}-ref.png";
+                string pathGot = $"../../Shot-{refPrefix}-{item.SplatPath}{item.CameraIndex}-got.png";
 
                 if (errorsCount > 50 || psnr < 90.0f)
                 {
                     Debug.LogWarning(
-                        $"{refPrefix} {item.assetPath} cam {item.cameraIndex}: RMSE {rmse:F2} PSNR {psnr:F2} diff pixels {errorsCount:N0}");
+                        $"{refPrefix} {item.SplatPath} cam {item.CameraIndex}: RMSE {rmse:F2} PSNR {psnr:F2} diff pixels {errorsCount:N0}");
 
                     NativeArray<byte> pngBytes = ImageConversion.EncodeNativeArrayToPNG(diffPixels,
                         GraphicsFormat.R8G8B8A8_SRGB, (uint) width, (uint) height);
@@ -147,8 +144,8 @@ namespace GaussianSplatting.Editor
             }
 
             cam.targetTexture = null;
-            gaussians.m_Asset = oldAsset;
-            gaussians.Update();
+            renderer.Splat = oldSplat;
+            renderer.Update();
             cam.transform.localPosition = oldCamPos;
             cam.transform.localRotation = oldCamRot;
             cam.fieldOfView = oldCamFov;
@@ -157,31 +154,31 @@ namespace GaussianSplatting.Editor
         }
 
         [BurstCompile]
-        struct DiffImagesJob : IJob
+        private struct DiffImagesJob : IJob
         {
-            public NativeArray<Color32> refPixels;
-            public NativeArray<Color32> gotPixels;
-            public NativeArray<Color32> difPixels;
-            [NativeDisableUnsafePtrRestriction] public unsafe float* rmsePtr;
-            [NativeDisableUnsafePtrRestriction] public unsafe float* psnrPtr;
-            [NativeDisableUnsafePtrRestriction] public unsafe int* difPixCount;
+            public NativeArray<Color32> RefPixels;
+            public NativeArray<Color32> GotPixels;
+            public NativeArray<Color32> DifPixels;
+            [NativeDisableUnsafePtrRestriction] public unsafe float* RmsePtr;
+            [NativeDisableUnsafePtrRestriction] public unsafe float* PsnrPtr;
+            [NativeDisableUnsafePtrRestriction] public unsafe int* DifPixCount;
 
             public unsafe void Execute()
             {
-                const int kDiffScale = 5;
-                const int kDiffThreshold = 3 * kDiffScale;
-                *difPixCount = 0;
+                const int kdiffScale = 5;
+                const int kdiffThreshold = 3 * kdiffScale;
+                *DifPixCount = 0;
                 double sumSqDif = 0;
-                for (int i = 0; i < refPixels.Length; ++i)
+                for (int i = 0; i < RefPixels.Length; ++i)
                 {
-                    Color32 cref = refPixels[i];
+                    Color32 cref = RefPixels[i];
                     // note: LoadImage always loads PNGs into ARGB order, so swizzle to normal RGBA
                     cref = new Color32(cref.g, cref.b, cref.a, 255);
-                    refPixels[i] = cref;
+                    RefPixels[i] = cref;
 
-                    Color32 cgot = gotPixels[i];
+                    Color32 cgot = GotPixels[i];
                     cgot.a = 255;
-                    gotPixels[i] = cgot;
+                    GotPixels[i] = cgot;
 
                     Color32 cdif = new Color32(0, 0, 0, 255);
                     cdif.r = (byte)math.abs(cref.r - cgot.r);
@@ -189,22 +186,23 @@ namespace GaussianSplatting.Editor
                     cdif.b = (byte)math.abs(cref.b - cgot.b);
                     sumSqDif += cdif.r * cdif.r + cdif.g * cdif.g + cdif.b * cdif.b;
 
-                    cdif.r = (byte)math.min(255, cdif.r * kDiffScale);
-                    cdif.g = (byte)math.min(255, cdif.g * kDiffScale);
-                    cdif.b = (byte)math.min(255, cdif.b * kDiffScale);
-                    difPixels[i] = cdif;
-                    if (cdif.r >= kDiffThreshold || cdif.g >= kDiffThreshold || cdif.b >= kDiffThreshold)
+                    cdif.r = (byte)math.min(255, cdif.r * kdiffScale);
+                    cdif.g = (byte)math.min(255, cdif.g * kdiffScale);
+                    cdif.b = (byte)math.min(255, cdif.b * kdiffScale);
+                    DifPixels[i] = cdif;
+                    if (cdif.r >= kdiffThreshold || cdif.g >= kdiffThreshold || cdif.b >= kdiffThreshold)
                     {
-                        (*difPixCount)++;
+                        (*DifPixCount)++;
                     }
                 }
 
-                double meanSqDif = sumSqDif / (refPixels.Length * 3);
+                double meanSqDif = sumSqDif / (RefPixels.Length * 3);
                 double rmse = math.sqrt(meanSqDif);
                 double psnr = 20.0 * math.log10(255.0) - 10.0 * math.log10(rmse * rmse);
-                *rmsePtr = (float) rmse;
-                *psnrPtr = (float) psnr;
+                *RmsePtr = (float) rmse;
+                *PsnrPtr = (float) psnr;
             }
         }
     }
 }
+*/

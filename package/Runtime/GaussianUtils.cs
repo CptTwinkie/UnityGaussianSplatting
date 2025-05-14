@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT
 
+using System;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Unity.Mathematics;
+using UnityEngine;
 
 namespace GaussianSplatting.Runtime
 {
@@ -49,25 +53,32 @@ namespace GaussianSplatting.Runtime
             float4 absQ = math.abs(q);
             int index = 0;
             float maxV = absQ.x;
+
             if (absQ.y > maxV)
             {
                 index = 1;
                 maxV = absQ.y;
             }
+
             if (absQ.z > maxV)
             {
                 index = 2;
                 maxV = absQ.z;
             }
+
             if (absQ.w > maxV)
             {
                 index = 3;
                 maxV = absQ.w;
             }
 
-            if (index == 0) q = q.yzwx;
-            if (index == 1) q = q.xzwy;
-            if (index == 2) q = q.xywz;
+            q = index switch
+            {
+                0 => q.yzwx,
+                1 => q.xzwy,
+                2 => q.xywz,
+                _ => q
+            };
 
             float3 three = q.xyz * (q.w >= 0 ? 1 : -1); // -1/sqrt2..+1/sqrt2 range
             three = (three * math.SQRT2) * 0.5f + 0.5f; // 0..1 range
@@ -78,7 +89,7 @@ namespace GaussianSplatting.Runtime
 
         // Based on https://fgiesen.wordpress.com/2009/12/13/decoding-morton-codes/
         // Insert two 0 bits after each of the 21 low bits of x
-        static ulong MortonPart1By2(ulong x)
+        private static ulong MortonPart1By2(ulong x)
         {
             x &= 0x1fffff;
             x = (x ^ (x << 32)) & 0x1f00000000ffffUL;
@@ -102,6 +113,49 @@ namespace GaussianSplatting.Runtime
             t = (t ^ (t >> 1)) & 0x3333;        // --EF--GH--AB--CD
             t = (t ^ (t >> 2)) & 0x0f0f;        // ----EFGH----ABCD
             return new uint2(t & 0xF, t >> 8);  // --------EFGHABCD
+        }
+
+        public static JsonSerializer GetSplatSerializer()
+        {
+            var serializer = new JsonSerializer();
+            serializer.Formatting = Formatting.Indented;
+            return serializer;
+        }
+    }
+
+    public class JsonVector3Converter : JsonConverter<Vector3>
+    {
+        public override void WriteJson(JsonWriter writer, Vector3 value, JsonSerializer serializer)
+        {
+            JObject j = new JObject {{"x", value.x}, {"y", value.y}, {"z", value.z}};
+
+            j.WriteTo(writer);
+        }
+
+        //CanRead is false which means the default implementation will be used instead.
+        public override Vector3 ReadJson(JsonReader reader, Type objectType, Vector3 existingValue, bool hasExistingValue, JsonSerializer serializer)
+        {
+            return existingValue;
+        }
+
+        public override bool CanWrite => true;
+
+        public override bool CanRead => false;
+    }
+
+    public class JsonHash128Converter : JsonConverter<Hash128>
+    {
+        public override void WriteJson(JsonWriter writer, Hash128 value, JsonSerializer serializer)
+        {
+            JObject j = new JObject {{"hash", value.ToString()}};
+            j.WriteTo(writer);
+        }
+
+        public override Hash128 ReadJson(JsonReader reader, Type objectType, Hash128 existingValue, bool hasExistingValue, JsonSerializer serializer)
+        {
+            JObject jo = JObject.Load(reader);
+            var value = jo.GetValue("hash").ToString();
+            return Hash128.Parse(value);
         }
     }
 }

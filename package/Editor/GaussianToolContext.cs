@@ -8,12 +8,12 @@ using UnityEngine;
 
 namespace GaussianSplatting.Editor
 {
-    [EditorToolContext("GaussianSplats", typeof(GaussianSplatRenderer)), Icon(k_IconPath)]
-    class GaussianToolContext : EditorToolContext
+    [EditorToolContext("GaussianSplats", typeof(GaussianSplatRenderer)), Icon(kIconPath)]
+    internal class GaussianToolContext : EditorToolContext
     {
-        const string k_IconPath = "Packages/org.nesnausk.gaussian-splatting/Editor/Icons/GaussianContext.png";
+        private const string kIconPath = "Packages/org.nesnausk.gaussian-splatting/Editor/Icons/GaussianContext.png";
 
-        Vector2 m_MouseStartDragPos;
+        private Vector2 _mouseStartDragPos;
 
         protected override Type GetEditorToolType(Tool tool)
         {
@@ -34,7 +34,7 @@ namespace GaussianSplatting.Editor
             gs.EditDeselectAll();
         }
 
-        static void HandleKeyboardCommands(Event evt, GaussianSplatRenderer gs)
+        private static void HandleKeyboardCommands(Event evt, GaussianSplatRenderer gs)
         {
             if (evt.type != EventType.ValidateCommand && evt.type != EventType.ExecuteCommand)
                 return;
@@ -78,7 +78,7 @@ namespace GaussianSplatting.Editor
             }
         }
 
-        static bool IsViewToolActive()
+        private static bool IsViewToolActive()
         {
             return Tools.viewToolActive || Tools.current == Tool.View || (Event.current != null && Event.current.alt);
         }
@@ -118,14 +118,14 @@ namespace GaussianSplatting.Editor
                         GaussianSplatRendererEditor.RepaintAll();
 
                         GUIUtility.hotControl = id;
-                        m_MouseStartDragPos = evt.mousePosition;
+                        _mouseStartDragPos = evt.mousePosition;
                         evt.Use();
                     }
                     break;
                 case EventType.MouseDrag:
                     if (GUIUtility.hotControl == id && evt.button == 0)
                     {
-                        Rect rect = FromToRect(m_MouseStartDragPos, evt.mousePosition);
+                        Rect rect = FromToRect(_mouseStartDragPos, evt.mousePosition);
                         Vector2 rectMin = HandleUtility.GUIPointToScreenPixelCoordinate(rect.min);
                         Vector2 rectMax = HandleUtility.GUIPointToScreenPixelCoordinate(rect.max);
                         gs.EditUpdateSelection(rectMin, rectMax, sceneView.camera, evt.control);
@@ -136,7 +136,7 @@ namespace GaussianSplatting.Editor
                 case EventType.MouseUp:
                     if (GUIUtility.hotControl == id && evt.button == 0)
                     {
-                        m_MouseStartDragPos = Vector2.zero;
+                        _mouseStartDragPos = Vector2.zero;
                         GUIUtility.hotControl = 0;
                         evt.Use();
                     }
@@ -145,34 +145,34 @@ namespace GaussianSplatting.Editor
                     // draw cutout gizmos
                     Handles.color = new Color(1,0,1,0.7f);
                     var prevMatrix = Handles.matrix;
-                    foreach (var cutout in gs.m_Cutouts)
+                    foreach (var cutout in gs.Cutouts)
                     {
                         if (!cutout)
                             continue;
                         Handles.matrix = cutout.transform.localToWorldMatrix;
-                        if (cutout.m_Type == GaussianCutout.Type.Ellipsoid)
+                        if (cutout.CutoutType == GaussianCutout.Type.Ellipsoid)
                         {
                             Handles.DrawWireDisc(Vector3.zero, Vector3.up, 1.0f);
                             Handles.DrawWireDisc(Vector3.zero, Vector3.right, 1.0f);
                             Handles.DrawWireDisc(Vector3.zero, Vector3.forward, 1.0f);
                         }
-                        if (cutout.m_Type == GaussianCutout.Type.Box)
+                        if (cutout.CutoutType == GaussianCutout.Type.Box)
                             Handles.DrawWireCube(Vector3.zero, Vector3.one * 2);
                     }
 
                     Handles.matrix = prevMatrix;
                     // draw selection bounding box
-                    if (gs.editSelectedSplats > 0)
+                    if (gs.EditSelectedSplats > 0)
                     {
-                        var selBounds = GaussianSplatRendererEditor.TransformBounds(gs.transform, gs.editSelectedBounds);
+                        var selBounds = GaussianSplatRendererEditor.TransformBounds(gs.transform, gs.EditSelectedBounds);
                         Handles.DrawWireCube(selBounds.center, selBounds.size);
                     }
                     // draw drag rectangle
-                    if (GUIUtility.hotControl == id && evt.mousePosition != m_MouseStartDragPos)
+                    if (GUIUtility.hotControl == id && evt.mousePosition != _mouseStartDragPos)
                     {
                         GUIStyle style = "SelectionRect";
                         Handles.BeginGUI();
-                        style.Draw(FromToRect(m_MouseStartDragPos, evt.mousePosition), false, false, false, false);
+                        style.Draw(FromToRect(_mouseStartDragPos, evt.mousePosition), false, false, false, false);
                         Handles.EndGUI();
                     }
                     break;
@@ -180,7 +180,7 @@ namespace GaussianSplatting.Editor
         }
 
         // build a rect that always has a positive size
-        static Rect FromToRect(Vector2 from, Vector2 to)
+        private static Rect FromToRect(Vector2 from, Vector2 to)
         {
             if (from.x > to.x)
                 (from.x, to.x) = (to.x, from.x);

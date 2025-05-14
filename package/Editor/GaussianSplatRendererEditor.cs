@@ -4,13 +4,13 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using GaussianSplatting.Editor.Utils;
 using GaussianSplatting.Runtime;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
 using UnityEditor;
 using UnityEditor.EditorTools;
 using UnityEngine;
-using GaussianSplatRenderer = GaussianSplatting.Runtime.GaussianSplatRenderer;
 
 namespace GaussianSplatting.Editor
 {
@@ -18,118 +18,123 @@ namespace GaussianSplatting.Editor
     [CanEditMultipleObjects]
     public class GaussianSplatRendererEditor : UnityEditor.Editor
     {
-        const string kPrefExportBake = "nesnausk.GaussianSplatting.ExportBakeTransform";
+        private const string kPrefExportBake = "nesnausk.GaussianSplatting.ExportBakeTransform";
 
-        SerializedProperty m_PropAsset;
-        SerializedProperty m_PropRenderOrder;
-        SerializedProperty m_PropSplatScale;
-        SerializedProperty m_PropOpacityScale;
-        SerializedProperty m_PropSHOrder;
-        SerializedProperty m_PropSHOnly;
-        SerializedProperty m_PropSortNthFrame;
-        SerializedProperty m_PropRenderMode;
-        SerializedProperty m_PropPointDisplaySize;
-        SerializedProperty m_PropCutouts;
-        SerializedProperty m_PropShaderSplats;
-        SerializedProperty m_PropShaderComposite;
-        SerializedProperty m_PropShaderDebugPoints;
-        SerializedProperty m_PropShaderDebugBoxes;
-        SerializedProperty m_PropCSSplatUtilities;
+        private SerializedProperty _propSplat;
+        private SerializedProperty _propRenderOrder;
+        private SerializedProperty _propSplatScale;
+        private SerializedProperty _propOpacityScale;
+        private SerializedProperty _propSHOrder;
+        private SerializedProperty _propSHOnly;
+        private SerializedProperty _propSortNthFrame;
+        private SerializedProperty _propRenderMode;
+        private SerializedProperty _propPointDisplaySize;
+        private SerializedProperty _propCutouts;
+        private SerializedProperty _propShaderSplats;
+        private SerializedProperty _propShaderComposite;
+        private SerializedProperty _propShaderDebugPoints;
+        private SerializedProperty _propShaderDebugBoxes;
+        private SerializedProperty _propCsSplatUtilities;
 
-        bool m_ResourcesExpanded = false;
-        int m_CameraIndex = 0;
+        private bool _resourcesExpanded;
+        private int _cameraIndex;
 
-        bool m_ExportBakeTransform;
+        private bool _exportBakeTransform;
 
-        static int s_EditStatsUpdateCounter = 0;
+        private static int s_editStatsUpdateCounter;
 
-        static HashSet<GaussianSplatRendererEditor> s_AllEditors = new();
+        private static HashSet<GaussianSplatRendererEditor> s_allEditors = new();
 
         public static void BumpGUICounter()
         {
-            ++s_EditStatsUpdateCounter;
+            ++s_editStatsUpdateCounter;
         }
 
         public static void RepaintAll()
         {
-            foreach (var e in s_AllEditors)
+            foreach (var e in s_allEditors)
+            {
                 e.Repaint();
+            }
         }
 
         public void OnEnable()
         {
-            m_ExportBakeTransform = EditorPrefs.GetBool(kPrefExportBake, false);
+            _exportBakeTransform = EditorPrefs.GetBool(kPrefExportBake, false);
 
-            m_PropAsset = serializedObject.FindProperty("m_Asset");
-            m_PropRenderOrder = serializedObject.FindProperty("m_RenderOrder");
-            m_PropSplatScale = serializedObject.FindProperty("m_SplatScale");
-            m_PropOpacityScale = serializedObject.FindProperty("m_OpacityScale");
-            m_PropSHOrder = serializedObject.FindProperty("m_SHOrder");
-            m_PropSHOnly = serializedObject.FindProperty("m_SHOnly");
-            m_PropSortNthFrame = serializedObject.FindProperty("m_SortNthFrame");
-            m_PropRenderMode = serializedObject.FindProperty("m_RenderMode");
-            m_PropPointDisplaySize = serializedObject.FindProperty("m_PointDisplaySize");
-            m_PropCutouts = serializedObject.FindProperty("m_Cutouts");
-            m_PropShaderSplats = serializedObject.FindProperty("m_ShaderSplats");
-            m_PropShaderComposite = serializedObject.FindProperty("m_ShaderComposite");
-            m_PropShaderDebugPoints = serializedObject.FindProperty("m_ShaderDebugPoints");
-            m_PropShaderDebugBoxes = serializedObject.FindProperty("m_ShaderDebugBoxes");
-            m_PropCSSplatUtilities = serializedObject.FindProperty("m_CSSplatUtilities");
+            _propSplat             = serializedObject.FindProperty(nameof(GaussianSplatRenderer.Splat));
+            _propRenderOrder       = serializedObject.FindProperty(nameof(GaussianSplatRenderer.RenderOrder));
+            _propSplatScale        = serializedObject.FindProperty(nameof(GaussianSplatRenderer.SplatScale));
+            _propOpacityScale      = serializedObject.FindProperty(nameof(GaussianSplatRenderer.OpacityScale));
+            _propSHOrder           = serializedObject.FindProperty(nameof(GaussianSplatRenderer.SHOrder));
+            _propSHOnly            = serializedObject.FindProperty(nameof(GaussianSplatRenderer.SHOnly));
+            _propSortNthFrame      = serializedObject.FindProperty(nameof(GaussianSplatRenderer.SortNthFrame));
+            _propRenderMode        = serializedObject.FindProperty(nameof(GaussianSplatRenderer.Mode));
+            _propPointDisplaySize  = serializedObject.FindProperty(nameof(GaussianSplatRenderer.PointDisplaySize));
+            _propCutouts           = serializedObject.FindProperty(nameof(GaussianSplatRenderer.Cutouts));
+            _propShaderSplats      = serializedObject.FindProperty(nameof(GaussianSplatRenderer.ShaderSplats));
+            _propShaderComposite   = serializedObject.FindProperty(nameof(GaussianSplatRenderer.ShaderComposite));
+            _propShaderDebugPoints = serializedObject.FindProperty(nameof(GaussianSplatRenderer.ShaderDebugPoints));
+            _propShaderDebugBoxes  = serializedObject.FindProperty(nameof(GaussianSplatRenderer.ShaderDebugBoxes));
+            _propCsSplatUtilities  = serializedObject.FindProperty(nameof(GaussianSplatRenderer.CsSplatUtilities));
 
-            s_AllEditors.Add(this);
+            s_allEditors.Add(this);
         }
 
         public void OnDisable()
         {
-            s_AllEditors.Remove(this);
+            s_allEditors.Remove(this);
         }
 
         public override void OnInspectorGUI()
         {
-            var gs = target as GaussianSplatRenderer;
-            if (!gs)
+            var renderer = target as GaussianSplatRenderer;
+            if (!renderer)
                 return;
 
             serializedObject.Update();
 
-            GUILayout.Label("Data Asset", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(m_PropAsset);
-
-            if (!gs.HasValidAsset)
+            GUILayout.Label("Splat Data", EditorStyles.boldLabel);
+            if ((target as GaussianSplatRenderer).Splat != null)
             {
-                var msg = gs.asset != null && gs.asset.formatVersion != GaussianSplatAsset.kCurrentVersion
-                    ? "Gaussian Splat asset version is not compatible, please recreate the asset"
-                    : "Gaussian Splat asset is not assigned or is empty";
+                EditorGUILayout.PropertyField(_propSplat);
+            }
+
+            if (!renderer.HasValidSplat)
+            {
+                var msg = renderer.Splat != null && renderer.Splat.FormatVersion != GaussianSplat.kCurrentVersion
+                    ? "Gaussian Splat version is not compatible, please recreate the splat"
+                    : "Gaussian Splat is not assigned or is empty";
                 EditorGUILayout.HelpBox(msg, MessageType.Error);
             }
 
             EditorGUILayout.Space();
             GUILayout.Label("Render Options", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(m_PropRenderOrder);
-            EditorGUILayout.PropertyField(m_PropSplatScale);
-            EditorGUILayout.PropertyField(m_PropOpacityScale);
-            EditorGUILayout.PropertyField(m_PropSHOrder);
-            EditorGUILayout.PropertyField(m_PropSHOnly);
-            EditorGUILayout.PropertyField(m_PropSortNthFrame);
+            EditorGUILayout.PropertyField(_propRenderOrder);
+            EditorGUILayout.PropertyField(_propSplatScale);
+            EditorGUILayout.PropertyField(_propOpacityScale);
+            EditorGUILayout.PropertyField(_propSHOrder);
+            EditorGUILayout.PropertyField(_propSHOnly);
+            EditorGUILayout.PropertyField(_propSortNthFrame);
 
             EditorGUILayout.Space();
             GUILayout.Label("Debugging Tweaks", EditorStyles.boldLabel);
-            EditorGUILayout.PropertyField(m_PropRenderMode);
-            if (m_PropRenderMode.intValue is (int)GaussianSplatRenderer.RenderMode.DebugPoints or (int)GaussianSplatRenderer.RenderMode.DebugPointIndices)
-                EditorGUILayout.PropertyField(m_PropPointDisplaySize);
+            EditorGUILayout.PropertyField(_propRenderMode);
+            if (_propRenderMode.intValue is (int)GaussianSplatRenderer.RenderMode.DebugPoints or (int)GaussianSplatRenderer.RenderMode.DebugPointIndices)
+                EditorGUILayout.PropertyField(_propPointDisplaySize);
 
             EditorGUILayout.Space();
-            m_ResourcesExpanded = EditorGUILayout.Foldout(m_ResourcesExpanded, "Resources", true, EditorStyles.foldoutHeader);
-            if (m_ResourcesExpanded)
+            _resourcesExpanded = EditorGUILayout.Foldout(_resourcesExpanded, "Resources", true, EditorStyles.foldoutHeader);
+            if (_resourcesExpanded)
             {
-                EditorGUILayout.PropertyField(m_PropShaderSplats);
-                EditorGUILayout.PropertyField(m_PropShaderComposite);
-                EditorGUILayout.PropertyField(m_PropShaderDebugPoints);
-                EditorGUILayout.PropertyField(m_PropShaderDebugBoxes);
-                EditorGUILayout.PropertyField(m_PropCSSplatUtilities);
+                EditorGUILayout.PropertyField(_propShaderSplats);
+                EditorGUILayout.PropertyField(_propShaderComposite);
+                EditorGUILayout.PropertyField(_propShaderDebugPoints);
+                EditorGUILayout.PropertyField(_propShaderDebugBoxes);
+                EditorGUILayout.PropertyField(_propCsSplatUtilities);
             }
-            bool validAndEnabled = gs && gs.enabled && gs.gameObject.activeInHierarchy && gs.HasValidAsset;
-            if (validAndEnabled && !gs.HasValidRenderSetup)
+            bool validAndEnabled = renderer && renderer.enabled && renderer.gameObject.activeInHierarchy && renderer.HasValidSplat;
+            if (validAndEnabled && !renderer.HasValidRenderSetup)
             {
                 EditorGUILayout.HelpBox("Shader resources are not set up", MessageType.Error);
                 validAndEnabled = false;
@@ -137,8 +142,8 @@ namespace GaussianSplatting.Editor
 
             if (validAndEnabled && targets.Length == 1)
             {
-                EditCameras(gs);
-                EditGUI(gs);
+                EditCameras(renderer);
+                EditGUI(renderer);
             }
             if (validAndEnabled && targets.Length > 1)
             {
@@ -148,44 +153,44 @@ namespace GaussianSplatting.Editor
             serializedObject.ApplyModifiedProperties();
         }
 
-        void EditCameras(GaussianSplatRenderer gs)
+        private void EditCameras(GaussianSplatRenderer gs)
         {
-            var asset = gs.asset;
-            var cameras = asset.cameras;
+            var splat = gs.Splat;
+            var cameras = splat.Cameras;
             if (cameras != null && cameras.Length != 0)
             {
                 EditorGUILayout.Space();
                 GUILayout.Label("Cameras", EditorStyles.boldLabel);
-                var camIndex = EditorGUILayout.IntSlider("Camera", m_CameraIndex, 0, cameras.Length - 1);
+                var camIndex = EditorGUILayout.IntSlider("Camera", _cameraIndex, 0, cameras.Length - 1);
                 camIndex = math.clamp(camIndex, 0, cameras.Length - 1);
-                if (camIndex != m_CameraIndex)
+                if (camIndex != _cameraIndex)
                 {
-                    m_CameraIndex = camIndex;
+                    _cameraIndex = camIndex;
                     gs.ActivateCamera(camIndex);
                 }
             }
         }
 
-        void MultiEditGUI()
+        private void MultiEditGUI()
         {
             DrawSeparator();
             CountTargetSplats(out var totalSplats, out var totalObjects);
             EditorGUILayout.LabelField("Total Objects", $"{totalObjects}");
             EditorGUILayout.LabelField("Total Splats", $"{totalSplats:N0}");
-            if (totalSplats > GaussianSplatAsset.kMaxSplats)
+            if (totalSplats > GaussianSplat.kMaxSplats)
             {
-                EditorGUILayout.HelpBox($"Can't merge, too many splats (max. supported {GaussianSplatAsset.kMaxSplats:N0})", MessageType.Warning);
+                EditorGUILayout.HelpBox($"Can't merge, too many splats (max. supported {GaussianSplat.kMaxSplats:N0})", MessageType.Warning);
                 return;
             }
 
             var targetGs = (GaussianSplatRenderer) target;
-            if (!targetGs || !targetGs.HasValidAsset || !targetGs.isActiveAndEnabled)
+            if (!targetGs || !targetGs.HasValidSplat || !targetGs.isActiveAndEnabled)
             {
-                EditorGUILayout.HelpBox($"Can't merge into {target.name} (no asset or disable)", MessageType.Warning);
+                EditorGUILayout.HelpBox($"Can't merge into {target.name} (no splat or disable)", MessageType.Warning);
                 return;
             }
 
-            if (targetGs.asset.chunkData != null)
+            if (targetGs.Splat.ChunkData != null)
             {
                 EditorGUILayout.HelpBox($"Can't merge into {target.name} (needs to use Very High quality preset)", MessageType.Warning);
                 return;
@@ -196,62 +201,63 @@ namespace GaussianSplatting.Editor
             }
         }
 
-        void CountTargetSplats(out int totalSplats, out int totalObjects)
+        private void CountTargetSplats(out int totalSplats, out int totalObjects)
         {
             totalObjects = 0;
             totalSplats = 0;
             foreach (var obj in targets)
             {
                 var gs = obj as GaussianSplatRenderer;
-                if (!gs || !gs.HasValidAsset || !gs.isActiveAndEnabled)
+                if (!gs || !gs.HasValidSplat || !gs.isActiveAndEnabled)
                     continue;
                 ++totalObjects;
-                totalSplats += gs.splatCount;
+                totalSplats += gs.SplatCount;
             }
         }
 
-        void MergeSplatObjects()
+        private void MergeSplatObjects()
         {
             CountTargetSplats(out var totalSplats, out _);
-            if (totalSplats > GaussianSplatAsset.kMaxSplats)
+            if (totalSplats > GaussianSplat.kMaxSplats)
                 return;
             var targetGs = (GaussianSplatRenderer) target;
 
-            int copyDstOffset = targetGs.splatCount;
+            int copyDstOffset = targetGs.SplatCount;
             targetGs.EditSetSplatCount(totalSplats);
             foreach (var obj in targets)
             {
                 var gs = obj as GaussianSplatRenderer;
-                if (!gs || !gs.HasValidAsset || !gs.isActiveAndEnabled)
+                if (!gs || !gs.HasValidSplat || !gs.isActiveAndEnabled)
                     continue;
                 if (gs == targetGs)
                     continue;
-                gs.EditCopySplatsInto(targetGs, 0, copyDstOffset, gs.splatCount);
-                copyDstOffset += gs.splatCount;
+                gs.EditCopySplatsInto(targetGs, 0, copyDstOffset, gs.SplatCount);
+                copyDstOffset += gs.SplatCount;
                 gs.gameObject.SetActive(false);
             }
             Debug.Assert(copyDstOffset == totalSplats, $"Merge count mismatch, {copyDstOffset} vs {totalSplats}");
             Selection.activeObject = targetGs;
         }
 
-        void EditGUI(GaussianSplatRenderer gs)
+        private void EditGUI(GaussianSplatRenderer renderer)
         {
-            ++s_EditStatsUpdateCounter;
+            ++s_editStatsUpdateCounter;
 
             DrawSeparator();
             bool wasToolActive = ToolManager.activeContextType == typeof(GaussianToolContext);
             GUILayout.BeginHorizontal();
             bool isToolActive = GUILayout.Toggle(wasToolActive, "Edit", EditorStyles.miniButton);
-            using (new EditorGUI.DisabledScope(!gs.editModified))
+            using (new EditorGUI.DisabledScope(!renderer.EditModified))
             {
                 if (GUILayout.Button("Reset", GUILayout.ExpandWidth(false)))
                 {
-                    if (EditorUtility.DisplayDialog("Reset Splat Modifications?",
-                            $"This will reset edits of {gs.name} to match the {gs.asset.name} asset. Continue?",
-                            "Yes, reset", "Cancel"))
+                    if (EditorUtility.DisplayDialog(
+                        "Reset Splat Modifications?",
+                        $"This will reset edits of {renderer.name} to match the {renderer.Splat.Name} splat. Continue?",
+                        "Yes, reset", "Cancel"))
                     {
-                        gs.enabled = false;
-                        gs.enabled = true;
+                        renderer.enabled = false;
+                        renderer.enabled = true;
                     }
                 }
             }
@@ -269,7 +275,7 @@ namespace GaussianSplatting.Editor
                 ToolManager.SetActiveContext<GameObjectToolContext>();
             }
 
-            if (isToolActive && gs.asset.chunkData != null)
+            if (isToolActive && renderer.Splat.ChunkData != null)
             {
                 EditorGUILayout.HelpBox("Splat move/rotate/scale tools need Very High splat quality preset", MessageType.Warning);
             }
@@ -280,95 +286,97 @@ namespace GaussianSplatting.Editor
             {
                 GaussianCutout cutout = ObjectFactory.CreateGameObject("GSCutout", typeof(GaussianCutout)).GetComponent<GaussianCutout>();
                 Transform cutoutTr = cutout.transform;
-                cutoutTr.SetParent(gs.transform, false);
-                cutoutTr.localScale = (gs.asset.boundsMax - gs.asset.boundsMin) * 0.25f;
-                gs.m_Cutouts ??= Array.Empty<GaussianCutout>();
-                ArrayUtility.Add(ref gs.m_Cutouts, cutout);
-                gs.UpdateEditCountsAndBounds();
-                EditorUtility.SetDirty(gs);
+                cutoutTr.SetParent(renderer.transform, false);
+                cutoutTr.localScale = (renderer.Splat.BoundsMax - renderer.Splat.BoundsMin) * 0.25f;
+                renderer.Cutouts ??= Array.Empty<GaussianCutout>();
+                ArrayUtility.Add(ref renderer.Cutouts, cutout);
+                renderer.UpdateEditCountsAndBounds();
+                EditorUtility.SetDirty(renderer);
                 Selection.activeGameObject = cutout.gameObject;
             }
+
             if (GUILayout.Button("Use All Cutouts"))
             {
-                gs.m_Cutouts = FindObjectsByType<GaussianCutout>(FindObjectsSortMode.InstanceID);
-                gs.UpdateEditCountsAndBounds();
-                EditorUtility.SetDirty(gs);
+                renderer.Cutouts = FindObjectsByType<GaussianCutout>(FindObjectsSortMode.InstanceID);
+                renderer.UpdateEditCountsAndBounds();
+                EditorUtility.SetDirty(renderer);
             }
 
             if (GUILayout.Button("No Cutouts"))
             {
-                gs.m_Cutouts = Array.Empty<GaussianCutout>();
-                gs.UpdateEditCountsAndBounds();
-                EditorUtility.SetDirty(gs);
+                renderer.Cutouts = Array.Empty<GaussianCutout>();
+                renderer.UpdateEditCountsAndBounds();
+                EditorUtility.SetDirty(renderer);
             }
             GUILayout.EndHorizontal();
-            EditorGUILayout.PropertyField(m_PropCutouts);
+            EditorGUILayout.PropertyField(_propCutouts);
 
-            bool hasCutouts = gs.m_Cutouts != null && gs.m_Cutouts.Length != 0;
-            bool modifiedOrHasCutouts = gs.editModified || hasCutouts;
+            bool hasCutouts = renderer.Cutouts != null && renderer.Cutouts.Length != 0;
+            bool modifiedOrHasCutouts = renderer.EditModified || hasCutouts;
 
-            var asset = gs.asset;
+            var splat = renderer.Splat;
             EditorGUILayout.Space();
             EditorGUI.BeginChangeCheck();
-            m_ExportBakeTransform = EditorGUILayout.Toggle("Export in world space", m_ExportBakeTransform);
+            _exportBakeTransform = EditorGUILayout.Toggle("Export in world space", _exportBakeTransform);
             if (EditorGUI.EndChangeCheck())
             {
-                EditorPrefs.SetBool(kPrefExportBake, m_ExportBakeTransform);
+                EditorPrefs.SetBool(kPrefExportBake, _exportBakeTransform);
             }
 
             if (GUILayout.Button("Export PLY"))
-                ExportPlyFile(gs, m_ExportBakeTransform);
-            if (asset.posFormat > GaussianSplatAsset.VectorFormat.Norm16 ||
-                asset.scaleFormat > GaussianSplatAsset.VectorFormat.Norm16 ||
-                asset.colorFormat > GaussianSplatAsset.ColorFormat.Float16x4 ||
-                asset.shFormat > GaussianSplatAsset.SHFormat.Float16)
             {
-                EditorGUILayout.HelpBox(
-                    "It is recommended to use High or VeryHigh quality preset for editing splats, lower levels are lossy",
-                    MessageType.Warning);
+                ExportPlyFile(renderer, _exportBakeTransform);
+            }
+
+            if (splat.PosFormat > GaussianSplat.VectorFormat.Norm16 ||
+                splat.ScaleFormat > GaussianSplat.VectorFormat.Norm16 ||
+                splat.ColFormat > GaussianSplat.ColorFormat.Float16X4 ||
+                splat.ShFormat > GaussianSplat.SHFormat.Float16)
+            {
+                EditorGUILayout.HelpBox("It is recommended to use High or VeryHigh quality preset for editing splats, lower levels are lossy", MessageType.Warning);
             }
 
             bool displayEditStats = isToolActive || modifiedOrHasCutouts;
             EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Splats", $"{gs.splatCount:N0}");
+            EditorGUILayout.LabelField("Splats", $"{renderer.SplatCount:N0}");
             if (displayEditStats)
             {
-                EditorGUILayout.LabelField("Cut", $"{gs.editCutSplats:N0}");
-                EditorGUILayout.LabelField("Deleted", $"{gs.editDeletedSplats:N0}");
-                EditorGUILayout.LabelField("Selected", $"{gs.editSelectedSplats:N0}");
+                EditorGUILayout.LabelField("Cut", $"{renderer.EditCutSplats:N0}");
+                EditorGUILayout.LabelField("Deleted", $"{renderer.EditDeletedSplats:N0}");
+                EditorGUILayout.LabelField("Selected", $"{renderer.EditSelectedSplats:N0}");
                 if (hasCutouts)
                 {
-                    if (s_EditStatsUpdateCounter > 10)
+                    if (s_editStatsUpdateCounter > 10)
                     {
-                        gs.UpdateEditCountsAndBounds();
-                        s_EditStatsUpdateCounter = 0;
+                        renderer.UpdateEditCountsAndBounds();
+                        s_editStatsUpdateCounter = 0;
                     }
                 }
             }
         }
 
-        static void DrawSeparator()
+        private static void DrawSeparator()
         {
             EditorGUILayout.Space(12f, true);
             GUILayout.Box(GUIContent.none, "sv_iconselector_sep", GUILayout.Height(2), GUILayout.ExpandWidth(true));
             EditorGUILayout.Space();
         }
 
-        bool HasFrameBounds()
+        private bool HasFrameBounds()
         {
             return true;
         }
 
-        Bounds OnGetFrameBounds()
+        private Bounds OnGetFrameBounds()
         {
             var gs = target as GaussianSplatRenderer;
             if (!gs || !gs.HasValidRenderSetup)
                 return new Bounds(Vector3.zero, Vector3.one);
             Bounds bounds = default;
-            bounds.SetMinMax(gs.asset.boundsMin, gs.asset.boundsMax);
-            if (gs.editSelectedSplats > 0)
+            bounds.SetMinMax(gs.Splat.BoundsMin, gs.Splat.BoundsMax);
+            if (gs.EditSelectedSplats > 0)
             {
-                bounds = gs.editSelectedBounds;
+                bounds = gs.EditSelectedBounds;
             }
             bounds.extents *= 0.7f;
             return TransformBounds(gs.transform, bounds);
@@ -391,20 +399,19 @@ namespace GaussianSplatting.Editor
             return new Bounds { center = center, extents = ext };
         }
 
-        static unsafe void ExportPlyFile(GaussianSplatRenderer gs, bool bakeTransform)
+        private static unsafe void ExportPlyFile(GaussianSplatRenderer gs, bool bakeTransform)
         {
-            var path = EditorUtility.SaveFilePanel(
-                "Export Gaussian Splat PLY file", "", $"{gs.asset.name}-edit.ply", "ply");
+            var path = EditorUtility.SaveFilePanel("Export Gaussian Splat PLY file", "", $"{gs.Splat.Name}-edit.ply", "ply");
             if (string.IsNullOrWhiteSpace(path))
                 return;
 
-            int kSplatSize = UnsafeUtility.SizeOf<Utils.InputSplatData>();
-            using var gpuData = new GraphicsBuffer(GraphicsBuffer.Target.Structured, gs.splatCount, kSplatSize);
+            int kSplatSize = UnsafeUtility.SizeOf<InputSplatData>();
+            using var gpuData = new GraphicsBuffer(GraphicsBuffer.Target.Structured, gs.SplatCount, kSplatSize);
 
             if (!gs.EditExportData(gpuData, bakeTransform))
                 return;
 
-            Utils.InputSplatData[] data = new Utils.InputSplatData[gpuData.count];
+            var data = new InputSplatData[gpuData.count];
             gpuData.GetData(data);
 
             var gpuDeleted = gs.GpuEditDeleted;
@@ -418,7 +425,7 @@ namespace GaussianSplatting.Editor
                 int wordIdx = i >> 5;
                 int bitIdx = i & 31;
                 bool isDeleted = (deleted[wordIdx] & (1u << bitIdx)) != 0;
-                bool isCutout = data[i].nor.sqrMagnitude > 0;
+                bool isCutout = data[i].Nor.sqrMagnitude > 0;
                 if (!isDeleted && !isCutout)
                     ++aliveCount;
             }
@@ -432,10 +439,10 @@ namespace GaussianSplatting.Editor
                 int wordIdx = i >> 5;
                 int bitIdx = i & 31;
                 bool isDeleted = (deleted[wordIdx] & (1u << bitIdx)) != 0;
-                bool isCutout = data[i].nor.sqrMagnitude > 0;
+                bool isCutout = data[i].Nor.sqrMagnitude > 0;
                 if (!isDeleted && !isCutout)
                 {
-                    var splat = data[i];
+                    InputSplatData splat = data[i];
                     byte* ptr = (byte*)&splat;
                     fs.Write(new ReadOnlySpan<byte>(ptr, kSplatSize));
                 }

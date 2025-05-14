@@ -15,13 +15,13 @@ namespace GaussianSplatting.Editor.Utils
     // https://github.com/nianticlabs/spz
     // https://scaniverse.com/spz
     [BurstCompile]
-    public static class SPZFileReader
+    public static class SpzFileReader
     {
-        struct SpzHeader {
-            public uint magic; // 0x5053474e "NGSP"
-            public uint version; // 2
-            public uint numPoints;
-            public uint sh_fracbits_flags_reserved;
+        private struct SpzHeader {
+            public uint Magic; // 0x5053474e "NGSP"
+            public uint Version; // 2
+            public uint NumPoints;
+            public uint SHFracbitsFlagsReserved;
         };
         public static void ReadFileHeader(string filePath, out int vertexCount)
         {
@@ -33,25 +33,25 @@ namespace GaussianSplatting.Editor.Utils
             ReadHeaderImpl(filePath, gz, out vertexCount, out _, out _, out _);
         }
 
-        static void ReadHeaderImpl(string filePath, Stream fs, out int vertexCount, out int shLevel, out int fractBits, out int flags)
+        private static void ReadHeaderImpl(string filePath, Stream fs, out int vertexCount, out int shLevel, out int fractBits, out int flags)
         {
             var header = new NativeArray<SpzHeader>(1, Allocator.Temp);
             var readBytes = fs.Read(header.Reinterpret<byte>(16));
             if (readBytes != 16)
                 throw new IOException($"SPZ {filePath} read error, failed to read header");
 
-            if (header[0].magic != 0x5053474e)
-                throw new IOException($"SPZ {filePath} read error, header magic unexpected {header[0].magic}");
-            if (header[0].version != 2)
-                throw new IOException($"SPZ {filePath} read error, header version unexpected {header[0].version}");
+            if (header[0].Magic != 0x5053474e)
+                throw new IOException($"SPZ {filePath} read error, header magic unexpected {header[0].Magic}");
+            if (header[0].Version != 2)
+                throw new IOException($"SPZ {filePath} read error, header version unexpected {header[0].Version}");
 
-            vertexCount = (int)header[0].numPoints;
-            shLevel = (int)(header[0].sh_fracbits_flags_reserved & 0xFF);
-            fractBits = (int)((header[0].sh_fracbits_flags_reserved >> 8) & 0xFF);
-            flags = (int)((header[0].sh_fracbits_flags_reserved >> 16) & 0xFF);
+            vertexCount = (int)header[0].NumPoints;
+            shLevel = (int)(header[0].SHFracbitsFlagsReserved & 0xFF);
+            fractBits = (int)((header[0].SHFracbitsFlagsReserved >> 8) & 0xFF);
+            flags = (int)((header[0].SHFracbitsFlagsReserved >> 16) & 0xFF);
         }
 
-        static int SHCoeffsForLevel(int level)
+        private static int SHCoeffsForLevel(int level)
         {
             return level switch
             {
@@ -97,15 +97,15 @@ namespace GaussianSplatting.Editor.Utils
             // unpack into full splat data
             splats = new NativeArray<InputSplatData>(splatCount, Allocator.Persistent);
             UnpackDataJob job = new UnpackDataJob();
-            job.packedPos = packedPos;
-            job.packedScale = packedScale;
-            job.packedRot = packedRot;
-            job.packedAlpha = packedAlpha;
-            job.packedCol = packedCol;
-            job.packedSh = packedSh;
-            job.shCoeffs = shCoeffs;
-            job.fractScale = 1.0f / (1 << fractBits);
-            job.splats = splats;
+            job.PackedPos = packedPos;
+            job.PackedScale = packedScale;
+            job.PackedRot = packedRot;
+            job.PackedAlpha = packedAlpha;
+            job.PackedCol = packedCol;
+            job.PackedSh = packedSh;
+            job.SHCoeffs = shCoeffs;
+            job.FractScale = 1.0f / (1 << fractBits);
+            job.Splats = splats;
             job.Schedule(splatCount, 4096).Complete();
 
             // cleanup
@@ -124,71 +124,71 @@ namespace GaussianSplatting.Editor.Utils
         }
 
         [BurstCompile]
-        struct UnpackDataJob : IJobParallelFor
+        private struct UnpackDataJob : IJobParallelFor
         {
-            [NativeDisableParallelForRestriction] [ReadOnly] public NativeArray<byte> packedPos;
-            [NativeDisableParallelForRestriction] [ReadOnly] public NativeArray<byte> packedScale;
-            [NativeDisableParallelForRestriction] [ReadOnly] public NativeArray<byte> packedRot;
-            [NativeDisableParallelForRestriction] [ReadOnly] public NativeArray<byte> packedAlpha;
-            [NativeDisableParallelForRestriction] [ReadOnly] public NativeArray<byte> packedCol;
-            [NativeDisableParallelForRestriction] [ReadOnly] public NativeArray<byte> packedSh;
-            public float fractScale;
-            public int shCoeffs;
-            public NativeArray<InputSplatData> splats;
+            [NativeDisableParallelForRestriction] [ReadOnly] public NativeArray<byte> PackedPos;
+            [NativeDisableParallelForRestriction] [ReadOnly] public NativeArray<byte> PackedScale;
+            [NativeDisableParallelForRestriction] [ReadOnly] public NativeArray<byte> PackedRot;
+            [NativeDisableParallelForRestriction] [ReadOnly] public NativeArray<byte> PackedAlpha;
+            [NativeDisableParallelForRestriction] [ReadOnly] public NativeArray<byte> PackedCol;
+            [NativeDisableParallelForRestriction] [ReadOnly] public NativeArray<byte> PackedSh;
+            public float FractScale;
+            public int SHCoeffs;
+            public NativeArray<InputSplatData> Splats;
 
             public void Execute(int index)
             {
-                var splat = splats[index];
+                var splat = Splats[index];
 
-                splat.pos = new Vector3(UnpackFloat(index * 3 + 0) * fractScale, UnpackFloat(index * 3 + 1) * fractScale, UnpackFloat(index * 3 + 2) * fractScale);
+                splat.Pos = new Vector3(UnpackFloat(index * 3 + 0) * FractScale, UnpackFloat(index * 3 + 1) * FractScale, UnpackFloat(index * 3 + 2) * FractScale);
 
-                splat.scale = new Vector3(packedScale[index * 3 + 0], packedScale[index * 3 + 1], packedScale[index * 3 + 2]) / 16.0f - new Vector3(10.0f, 10.0f, 10.0f);
-                splat.scale = GaussianUtils.LinearScale(splat.scale);
+                splat.Scale = new Vector3(PackedScale[index * 3 + 0], PackedScale[index * 3 + 1], PackedScale[index * 3 + 2]) / 16.0f - new Vector3(10.0f, 10.0f, 10.0f);
+                splat.Scale = GaussianUtils.LinearScale(splat.Scale);
 
-                Vector3 xyz = new Vector3(packedRot[index * 3 + 0], packedRot[index * 3 + 1], packedRot[index * 3 + 2]) * (1.0f / 127.5f) - new Vector3(1, 1, 1);
+                Vector3 xyz = new Vector3(PackedRot[index * 3 + 0], PackedRot[index * 3 + 1], PackedRot[index * 3 + 2]) * (1.0f / 127.5f) - new Vector3(1, 1, 1);
                 float w = math.sqrt(math.max(0.0f, 1.0f - xyz.sqrMagnitude));
                 var q = new float4(xyz.x, xyz.y, xyz.z, w);
                 var qq = math.normalize(q);
                 qq = GaussianUtils.PackSmallest3Rotation(qq);
-                splat.rot = new Quaternion(qq.x, qq.y, qq.z, qq.w);
+                splat.Rot = new Quaternion(qq.x, qq.y, qq.z, qq.w);
 
-                splat.opacity = packedAlpha[index] / 255.0f;
+                splat.Opacity = PackedAlpha[index] / 255.0f;
 
-                Vector3 col = new Vector3(packedCol[index * 3 + 0], packedCol[index * 3 + 1], packedCol[index * 3 + 2]);
+                Vector3 col = new Vector3(PackedCol[index * 3 + 0], PackedCol[index * 3 + 1], PackedCol[index * 3 + 2]);
                 col = col / 255.0f - new Vector3(0.5f, 0.5f, 0.5f);
                 col /= 0.15f;
-                splat.dc0 = GaussianUtils.SH0ToColor(col);
+                splat.Dc0 = GaussianUtils.SH0ToColor(col);
 
-                int shIdx = index * shCoeffs * 3;
-                splat.sh1 = UnpackSH(shIdx); shIdx += 3;
-                splat.sh2 = UnpackSH(shIdx); shIdx += 3;
-                splat.sh3 = UnpackSH(shIdx); shIdx += 3;
-                splat.sh4 = UnpackSH(shIdx); shIdx += 3;
-                splat.sh5 = UnpackSH(shIdx); shIdx += 3;
-                splat.sh6 = UnpackSH(shIdx); shIdx += 3;
-                splat.sh7 = UnpackSH(shIdx); shIdx += 3;
-                splat.sh8 = UnpackSH(shIdx); shIdx += 3;
-                splat.sh9 = UnpackSH(shIdx); shIdx += 3;
-                splat.shA = UnpackSH(shIdx); shIdx += 3;
-                splat.shB = UnpackSH(shIdx); shIdx += 3;
-                splat.shC = UnpackSH(shIdx); shIdx += 3;
-                splat.shD = UnpackSH(shIdx); shIdx += 3;
-                splat.shE = UnpackSH(shIdx); shIdx += 3;
-                splat.shF = UnpackSH(shIdx); shIdx += 3;
+                int shIdx = index * SHCoeffs * 3;
+                splat.SH1 = UnpackSH(shIdx); shIdx += 3;
+                splat.SH2 = UnpackSH(shIdx); shIdx += 3;
+                splat.SH3 = UnpackSH(shIdx); shIdx += 3;
+                splat.SH4 = UnpackSH(shIdx); shIdx += 3;
+                splat.SH5 = UnpackSH(shIdx); shIdx += 3;
+                splat.SH6 = UnpackSH(shIdx); shIdx += 3;
+                splat.SH7 = UnpackSH(shIdx); shIdx += 3;
+                splat.SH8 = UnpackSH(shIdx); shIdx += 3;
+                splat.SH9 = UnpackSH(shIdx); shIdx += 3;
+                splat.SHA = UnpackSH(shIdx); shIdx += 3;
+                splat.SHB = UnpackSH(shIdx); shIdx += 3;
+                splat.SHC = UnpackSH(shIdx); shIdx += 3;
+                splat.SHD = UnpackSH(shIdx); shIdx += 3;
+                splat.SHE = UnpackSH(shIdx); shIdx += 3;
+                splat.SHF = UnpackSH(shIdx); shIdx += 3;
 
-                splats[index] = splat;
+                Splats[index] = splat;
             }
 
-            float UnpackFloat(int idx)
+            private float UnpackFloat(int idx)
             {
-                int fx = packedPos[idx * 3 + 0] | (packedPos[idx * 3 + 1] << 8) | (packedPos[idx * 3 + 2] << 16);
+                int fx = PackedPos[idx * 3 + 0] | (PackedPos[idx * 3 + 1] << 8) | (PackedPos[idx * 3 + 2] << 16);
                 fx |= (fx & 0x800000) != 0 ? -16777216 : 0; // sign extension with 0xff000000
                 return fx;
             }
 
-            Vector3 UnpackSH(int idx)
+            private Vector3 UnpackSH(int idx)
             {
-                Vector3 sh = new Vector3(packedSh[idx], packedSh[idx + 1], packedSh[idx + 2]) - new Vector3(128.0f, 128.0f, 128.0f);
+                Vector3 sh = new Vector3(PackedSh[idx], PackedSh[idx + 1], PackedSh[idx + 2]) - new Vector3(128.0f, 128.0f, 128.0f);
                 sh /= 128.0f;
                 return sh;
             }

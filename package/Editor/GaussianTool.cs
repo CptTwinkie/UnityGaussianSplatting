@@ -6,14 +6,12 @@ using UnityEngine;
 
 namespace GaussianSplatting.Editor
 {
-    abstract class GaussianTool : EditorTool
+    internal abstract class GaussianTool : EditorTool
     {
         protected GaussianSplatRenderer GetRenderer()
         {
             var gs = target as GaussianSplatRenderer;
-            if (!gs || !gs.HasValidAsset || !gs.HasValidRenderSetup)
-                return null;
-            return gs;
+            return !gs || !gs.HasValidSplat || !gs.HasValidRenderSetup ? null : gs;
         }
 
         protected bool CanBeEdited()
@@ -21,7 +19,7 @@ namespace GaussianSplatting.Editor
             var gs = GetRenderer();
             if (!gs)
                 return false;
-            return gs.asset.chunkData == null; // need to be lossless / non-chunked for editing
+            return gs.Splat.ChunkData == null; // need to be lossless / non-chunked for editing
         }
 
         protected bool HasSelection()
@@ -29,15 +27,15 @@ namespace GaussianSplatting.Editor
             var gs = GetRenderer();
             if (!gs)
                 return false;
-            return gs.editSelectedSplats > 0;
+            return gs.EditSelectedSplats > 0;
         }
 
         protected Vector3 GetSelectionCenterLocal()
         {
             var gs = GetRenderer();
-            if (!gs || gs.editSelectedSplats == 0)
+            if (!gs || gs.EditSelectedSplats == 0)
                 return Vector3.zero;
-            return gs.editSelectedBounds.center;
+            return gs.EditSelectedBounds.center;
         }
     }
 }
